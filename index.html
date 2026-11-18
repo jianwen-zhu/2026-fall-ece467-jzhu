@@ -34,10 +34,11 @@ complex software manageable — and the <strong>science of
 programming</strong> — turning formal models into working algorithms.
 Both extend well beyond compiler development.</p>
 <p>The project brings these foundations to the <strong>frontier of AI
-infrastructure</strong>. Build a compiler for a language that expresses
-modern large language model computations using tensors—multidimensional
-arrays. Generate programs for graphics processing units (GPUs), test
-their results, and measure your optimizations' performance.</p>
+infrastructure</strong>. Build a compiler for a language that uses
+tensors—multidimensional arrays—to express computations in modern large
+language models. Run the generated programs on graphics processing units
+(GPUs). The payoff is measurable: <strong>correct results, wall-clock
+execution time, and speedups you can explain</strong>.</p>
 <h2 id="topics">Topics</h2>
 <p>The lectures develop the foundations for building a compiler. Topics
 and readings follow the schedule on Quercus, the university's course
@@ -94,18 +95,28 @@ compiled programs. <a
 href="https://github.com/jianwen-zhu/cloudmake">CloudMake</a> runs your
 project's Make targets locally or in the cloud: edit on your computer,
 build and test on a GPU.</p>
-<p>The project is split into five stages, one for each compiler phase.
-Together, they recover the program's structure, check its meaning,
-generate working code, and optimize it. Supplied intermediate files let
-you test each phase independently before connecting them.</p>
+<figure class="compiler-pipeline" aria-labelledby="pipeline-caption">
+<ol class="pipeline-steps" aria-label="From source program to measured execution">
+<li><span class="pipeline-label">Source program</span><strong>TTL467</strong><span>Tensor computations</span></li>
+<li class="pipeline-student"><span class="pipeline-label">You build</span><strong>The compiler</strong><span>Analyze, generate, optimize</span></li>
+<li><span class="pipeline-label">Generated program</span><strong>TileLang</strong><span>GPU kernels</span></li>
+<li><span class="pipeline-label">Compile &amp; run</span><strong>GPU execution</strong><span>Check results. Measure time.</span></li>
+</ol>
+<figcaption id="pipeline-caption"><strong>The test is execution.</strong> Compare your baseline and optimized programs on the same workload and hardware.<span class="pipeline-metric">Speedup = baseline wall-clock time / optimized wall-clock time</span></figcaption>
+</figure>
+
+<p>The project is split into five stages, each focused on a compiler
+phase. Together, they recover the program's structure, check its
+meaning, generate working code, and optimize it. Supplied intermediate
+files let you test each phase independently before connecting them.</p>
 <h3 id="lexical-analysis">01 · Lexical Analysis</h3>
 <p>Build a scanner that groups characters into tokens such as keywords,
 identifiers, and numbers. Report invalid input and pass the tokens to
 the parser.</p>
 <h3 id="syntax-analysis">02 · Syntax Analysis</h3>
-<p>Check the token stream against TTL467's grammar. Build an abstract
-syntax tree representing declarations, expressions, and their
-relationships.</p>
+<p>Build a parser that checks the token stream against TTL467's grammar
+and constructs an abstract syntax tree representing declarations,
+expressions, and their relationships.</p>
 <h3 id="semantic-analysis">03 · Semantic Analysis</h3>
 <p>Resolve names, validate tensor operations, and diagnose violations of
 the language's rules. Determine the types and shapes needed for code
@@ -115,11 +126,11 @@ generation.</p>
 of how to connect them. Test the results across the required operations
 and shapes. Keep this correct, unoptimized version as your baseline.</p>
 <h3 id="code-optimization">05 · Code Optimization</h3>
-<p>Choose and implement compiler optimizations. Compare with your
-baseline on common workloads, investigate performance changes, and
-provide reproducible correctness checks and timings. The leaderboard
-shows performance; your report explains the compiler decisions behind
-it.</p>
+<p>Choose and implement compiler optimizations. Verify correctness,
+measure wall-clock execution time, and report reproducible speedups over
+your baseline on the same workloads and hardware. The leaderboard shows
+measured performance; your report explains which compiler decisions made
+the difference.</p>
 <p>Use lab sessions to implement, test, and discuss your design. The
 tutorials prepare you with small programs to run, modify, and
 diagnose.</p>
