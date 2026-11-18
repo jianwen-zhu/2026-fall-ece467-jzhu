@@ -102,7 +102,7 @@ build and test on a GPU.</p>
 <li><span class="pipeline-label">Generated program</span><strong>TileLang</strong><span>GPU kernels</span></li>
 <li><span class="pipeline-label">Compile &amp; run</span><strong>GPU execution</strong><span>Check results. Measure time.</span></li>
 </ol>
-<figcaption id="pipeline-caption"><strong>The test is execution.</strong> Compare your baseline and optimized programs on the same workload and hardware.<span class="pipeline-metric">Speedup = baseline wall-clock time / optimized wall-clock time</span></figcaption>
+<figcaption id="pipeline-caption"><strong>The test is execution.</strong> Compare your baseline and optimized programs on the same workload and hardware.<span class="pipeline-metric">Speedup = baseline execution time / optimized execution time</span></figcaption>
 </figure>
 
 <p>The project is split into five stages, each focused on a compiler
@@ -124,7 +124,8 @@ generation.</p>
 <h3 id="code-generation">04 · Code Generation</h3>
 <p>Translate the checked program into TileLang kernels and descriptions
 of how to connect them. Test the results across the required operations
-and shapes. Keep this correct, unoptimized version as your baseline.</p>
+and shapes. Keep this correct version as your baseline before adding
+your compiler optimizations.</p>
 <h3 id="code-optimization">05 · Code Optimization</h3>
 <p>Choose and implement compiler optimizations. Verify correctness,
 measure wall-clock execution time, and report reproducible speedups over
