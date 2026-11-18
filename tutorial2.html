@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial 2: Parsing with
+Bison — ECE467</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="index.html">ECE<span>467</span></a><div><a href="index.html#objectives">Overview</a><a href="index.html#topics">Topics</a><a href="index.html#project">Project</a><a href="index.html#tutorials">Tutorials</a><a href="index.html#resources">Resources</a></div></nav>
+<main id="main" class="reference"><p><a
+href="index.html#tutorials">Tutorials</a> · <a
+href="tutorial2.ipynb">Notebook source</a> · <a
+href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial2.ipynb">Run
+in Colab</a></p>
+<div id="tutorial2-cell0" class="cell markdown">
+<h1 id="tutorial-2-parsing-with-bison">Tutorial 2: Parsing with Bison</h1>
+<p>Recognize a declaration, diagnose syntax errors, and build its abstract syntax tree. Run the cells in order; save experiments before rerunning a source-writing cell.</p>
+<p><a href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial2.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab" /></a></p>
+</div>
+<div id="tutorial2-cell1" class="cell markdown">
+<h2 id="setup">Setup</h2>
+<p>Run these setup cells once, then work through the examples in order. In Colab, use a CPU runtime. On your own computer, install Make, a C compiler, and Bison first.</p>
+</div>
+<div id="tutorial2-cell2" class="cell code">
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>missing<span class="op">=</span><span class="dv">0</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> tool <span class="kw">in</span> make cc bison<span class="op">;</span> do command <span class="op">-</span>v <span class="st">&quot;$tool&quot;</span> <span class="op">&gt;/</span>dev<span class="op">/</span>null <span class="op">||</span> missing<span class="op">=</span><span class="dv">1</span><span class="op">;</span> done</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> python3 <span class="op">-</span>c <span class="st">&#39;import google.colab&#39;</span> <span class="dv">2</span><span class="op">&gt;/</span>dev<span class="op">/</span>null<span class="op">;</span> then</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> [ <span class="st">&quot;$missing&quot;</span> <span class="op">-</span>eq <span class="dv">1</span> ]<span class="op">;</span> then</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        apt<span class="op">-</span>get <span class="op">-</span>qq update</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        apt<span class="op">-</span>get <span class="op">-</span>qq install <span class="op">-</span>y build<span class="op">-</span>essential bison</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    fi</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>fi</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> tool <span class="kw">in</span> make cc bison<span class="op">;</span> do command <span class="op">-</span>v <span class="st">&quot;$tool&quot;</span><span class="op">;</span> done</span></code></pre></div>
+</div>
+<div class="cell markdown">
+<p><em>The notebook's companion-file setup cell restores the included sources. Run it before the examples.</em></p>
+</div>
+<div id="tutorial2-cell4" class="cell code">
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>mkdir <span class="op">-</span>p .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>cp support<span class="op">/</span>arena.c support<span class="op">/</span>arena.h .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work<span class="op">/</span></span></code></pre></div>
+</div>
+<div id="tutorial2-cell5" class="cell markdown">
+<h2 id="tokens-describe-parts-grammar-describes-structure">Tokens describe parts; grammar describes structure</h2>
+<p>For <code>axis B := 4;</code>, assume the scanner supplies:</p>
+<pre class="text"><code>AXIS IDENTIFIER ASSIGN INTEGER &#39;;&#39; EOF</code></pre>
+<p><code>%token</code> declares token codes; <code>%start</code> names the start rule; the two <code>%%</code> lines delimit the grammar. The braces contain a C action run when Bison reduces that rule.</p>
+<p>Here <code>yylex</code> supplies fixed token codes instead of scanning text. Returning zero means end of input. This lets us study parsing without a scanner.</p>
+<p><strong>Predict:</strong> which token is expected after <code>INTEGER</code>? Is another identifier after the semicolon allowed?</p>
+</div>
+<div id="tutorial2-cell6" class="cell code">
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work<span class="op">/</span>declaration.y</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>{</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co">#include &lt;stdio.h&gt;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">#include &lt;string.h&gt;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> yylex(void)<span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>void yyerror(const char <span class="op">*</span>message)<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>static const <span class="bu">int</span> <span class="op">*</span><span class="bu">input</span><span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>}</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>token AXIS IDENTIFIER ASSIGN INTEGER</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>start declaration</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>declaration: AXIS IDENTIFIER ASSIGN INTEGER <span class="st">&#39;;&#39;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>             { puts(<span class="st">&quot;reduced declaration&quot;</span>)<span class="op">;</span> }<span class="op">;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> yylex(void) {</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="bu">int</span> token <span class="op">=</span> <span class="op">*</span><span class="bu">input</span><span class="op">;</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (token) <span class="op">++</span><span class="bu">input</span><span class="op">;</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> token<span class="op">;</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>void yyerror(const char <span class="op">*</span>message) { fprintf(stderr, <span class="st">&quot;</span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, message)<span class="op">;</span> }</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> main(<span class="bu">int</span> argc, char <span class="op">**</span>argv) {</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    static const <span class="bu">int</span> valid[] <span class="op">=</span> {AXIS, IDENTIFIER, ASSIGN, INTEGER, <span class="st">&#39;;&#39;</span>, <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    static const <span class="bu">int</span> missing[] <span class="op">=</span> {AXIS, IDENTIFIER, ASSIGN, INTEGER, <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    static const <span class="bu">int</span> trailing[] <span class="op">=</span> {AXIS, IDENTIFIER, ASSIGN, INTEGER, <span class="st">&#39;;&#39;</span>, IDENTIFIER, <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    <span class="bu">input</span> <span class="op">=</span> valid<span class="op">;</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (argc <span class="op">==</span> <span class="dv">2</span> <span class="op">&amp;&amp;</span> <span class="op">!</span>strcmp(argv[<span class="dv">1</span>], <span class="st">&quot;missing&quot;</span>)) <span class="bu">input</span> <span class="op">=</span> missing<span class="op">;</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span> <span class="cf">if</span> (argc <span class="op">==</span> <span class="dv">2</span> <span class="op">&amp;&amp;</span> <span class="op">!</span>strcmp(argv[<span class="dv">1</span>], <span class="st">&quot;trailing&quot;</span>)) <span class="bu">input</span> <span class="op">=</span> trailing<span class="op">;</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span> <span class="cf">if</span> (argc <span class="op">!=</span> <span class="dv">1</span>) <span class="cf">return</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> yyparse()<span class="op">;</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+</div>
+<div id="tutorial2-cell7" class="cell markdown">
+<h2 id="build-run-and-diagnose">Build, run, and diagnose</h2>
+<p>Bison generates C; the C compiler builds the executable. <code>make</code> expresses both steps; <code>-d</code> also generates the token header. Recipe lines start with a tab.</p>
+<p>Run the valid input first. Then predict each failure <strong>before</strong> running the next cell. A rule's action may run before later input makes the whole parse fail: <code>yyparse()</code>'s return status, not the printed reduction, determines acceptance.</p>
+</div>
+<div id="tutorial2-cell8" class="cell code">
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work<span class="op">/</span>Makefile</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>CC <span class="op">=</span> cc</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>CFLAGS <span class="op">=</span> <span class="op">-</span>std<span class="op">=</span>c11 <span class="op">-</span>O0 <span class="op">-</span>g <span class="op">-</span>Wall <span class="op">-</span>Wextra</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>BISON <span class="op">=</span> bison</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>.PHONY: <span class="bu">all</span> clean</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="bu">all</span>: declaration</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>declaration.c: declaration.y</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a> $(BISON) <span class="op">-</span>d <span class="op">-</span>o $<span class="op">@</span> $<span class="op">&lt;</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>declaration: declaration.c</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>   $(CC) $(CFLAGS) $<span class="op">&lt;</span> <span class="op">-</span>o $<span class="op">@</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>tree.c: tree.y</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>   $(BISON) <span class="op">-</span>d <span class="op">-</span>o $<span class="op">@</span> $<span class="op">&lt;</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>tree: tree.c arena.c arena.h</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>   $(CC) $(CFLAGS) tree.c arena.c <span class="op">-</span>o $<span class="op">@</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>clean:</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>   $(RM) declaration tree declaration.c declaration.h tree.c tree.h</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>   $(RM) actual.txt error.txt</span></code></pre></div>
+</div>
+<div id="tutorial2-cell9" class="cell code">
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>make</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>.<span class="op">/</span>declaration <span class="op">|</span> tee actual.txt</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;reduced declaration</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> diff <span class="op">-</span> actual.txt</span></code></pre></div>
+</div>
+<div id="tutorial2-cell10" class="cell code">
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> case <span class="kw">in</span> missing trailing<span class="op">;</span> do</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    echo <span class="st">&quot;Input: $case&quot;</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> .<span class="op">/</span>declaration <span class="st">&quot;$case&quot;</span> <span class="op">&gt;</span> actual.txt <span class="dv">2</span><span class="op">&gt;</span> error.txt<span class="op">;</span> then</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>        echo <span class="st">&quot;Expected rejection, but parsing succeeded&quot;</span> <span class="op">&gt;&amp;</span><span class="dv">2</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>        exit <span class="dv">1</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>        status<span class="op">=</span>$?</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>        test <span class="st">&quot;$status&quot;</span> <span class="op">-</span>eq <span class="dv">1</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    fi</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    cat actual.txt error.txt</span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    grep <span class="op">-</span>q <span class="st">&#39;syntax error&#39;</span> error.txt</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>done</span></code></pre></div>
+</div>
+<div id="tutorial2-cell11" class="cell markdown">
+<p><strong>Diagnose:</strong> the missing semicolon leaves an incomplete declaration; the extra identifier violates end-of-input. Both inputs must fail. Whether the trailing-input case first prints a reduction can depend on the Bison version.</p>
+<p><strong>Modify:</strong> add the missing semicolon to the <code>missing</code> array and rebuild. Predict why the failure-check cell now complains. Restore the array before running all cells again.</p>
+<h2 id="give-the-declaration-a-structure">Give the declaration a structure</h2>
+<p>Token codes describe categories; semantic values carry data such as the spelling <code>B</code>. The next version constructs:</p>
+<pre class="text"><code>Axis
+  Name(&quot;B&quot;)
+  Integer(&quot;4&quot;)</code></pre>
+<p><code>%union</code> lists the C value types. Typed <code>%token</code> and <code>%type</code> select them. In an action, <code>$1</code>, <code>$2</code>, etc. refer to right-hand-side values; <code>$$</code> is its result. Locate the two leaf actions and the action attaching them to a parent.</p>
+<p>The supplied <code>arena_new</code> and <code>arena_copy</code> allocate nodes and copy retained text. Treat them as provided operations; allocator internals are outside this tutorial. Token data is borrowed; the AST must own the text it keeps.</p>
+</div>
+<div id="tutorial2-cell12" class="cell code">
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work<span class="op">/</span>tree.y</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>{</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co">#include &lt;stdio.h&gt;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co">#include &quot;arena.h&quot;</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>struct node {</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    const char <span class="op">*</span>kind, <span class="op">*</span>text<span class="op">;</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    struct node <span class="op">*</span>left, <span class="op">*</span>right<span class="op">;</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>}<span class="op">;</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>static struct arena ast_arena<span class="op">;</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>static struct node <span class="op">*</span>root<span class="op">;</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> yylex(void)<span class="op">;</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>void yyerror(const char <span class="op">*</span>message)<span class="op">;</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>}</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>union { const char <span class="op">*</span>text<span class="op">;</span> struct node <span class="op">*</span>node<span class="op">;</span> }</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>token AXIS ASSIGN</span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>token <span class="op">&lt;</span>text<span class="op">&gt;</span> IDENTIFIER INTEGER</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a><span class="op">%</span><span class="bu">type</span> <span class="op">&lt;</span>node<span class="op">&gt;</span> name extent declaration</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>start declaration</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>name: IDENTIFIER {</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    $$ <span class="op">=</span> arena_new(<span class="op">&amp;</span>ast_arena, sizeof <span class="op">*</span>$$)<span class="op">;</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>    $$<span class="op">-&gt;</span>kind <span class="op">=</span> <span class="st">&quot;Name&quot;</span><span class="op">;</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>    $$<span class="op">-&gt;</span>text <span class="op">=</span> arena_copy(<span class="op">&amp;</span>ast_arena, $<span class="dv">1</span>)<span class="op">;</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>}<span class="op">;</span></span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>extent: INTEGER {</span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>    $$ <span class="op">=</span> arena_new(<span class="op">&amp;</span>ast_arena, sizeof <span class="op">*</span>$$)<span class="op">;</span></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>    $$<span class="op">-&gt;</span>kind <span class="op">=</span> <span class="st">&quot;Integer&quot;</span><span class="op">;</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>    $$<span class="op">-&gt;</span>text <span class="op">=</span> arena_copy(<span class="op">&amp;</span>ast_arena, $<span class="dv">1</span>)<span class="op">;</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>}<span class="op">;</span></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>declaration: AXIS name ASSIGN extent <span class="st">&#39;;&#39;</span> {</span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>    $$ <span class="op">=</span> arena_new(<span class="op">&amp;</span>ast_arena, sizeof <span class="op">*</span>$$)<span class="op">;</span></span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>    $$<span class="op">-&gt;</span>kind <span class="op">=</span> <span class="st">&quot;Axis&quot;</span><span class="op">;</span></span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>    $$<span class="op">-&gt;</span>left <span class="op">=</span> $<span class="dv">2</span><span class="op">;</span></span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>    $$<span class="op">-&gt;</span>right <span class="op">=</span> $<span class="dv">4</span><span class="op">;</span></span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>    root <span class="op">=</span> $$<span class="op">;</span></span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>}<span class="op">;</span></span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> yylex(void) {</span>
+<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a>    static unsigned <span class="bu">next</span><span class="op">;</span></span>
+<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>    static const <span class="bu">int</span> tokens[] <span class="op">=</span> {AXIS, IDENTIFIER, ASSIGN, INTEGER, <span class="st">&#39;;&#39;</span>, <span class="dv">0</span>}<span class="op">;</span></span>
+<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a>    <span class="bu">int</span> token <span class="op">=</span> tokens[<span class="bu">next</span>]<span class="op">;</span></span>
+<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (token) <span class="op">++</span><span class="bu">next</span><span class="op">;</span></span>
+<span id="cb9-43"><a href="#cb9-43" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (token <span class="op">==</span> IDENTIFIER) yylval.text <span class="op">=</span> <span class="st">&quot;B&quot;</span><span class="op">;</span></span>
+<span id="cb9-44"><a href="#cb9-44" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (token <span class="op">==</span> INTEGER) yylval.text <span class="op">=</span> <span class="st">&quot;4&quot;</span><span class="op">;</span></span>
+<span id="cb9-45"><a href="#cb9-45" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> token<span class="op">;</span></span>
+<span id="cb9-46"><a href="#cb9-46" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb9-47"><a href="#cb9-47" aria-hidden="true" tabindex="-1"></a>void yyerror(const char <span class="op">*</span>message) { fprintf(stderr, <span class="st">&quot;</span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, message)<span class="op">;</span> }</span>
+<span id="cb9-48"><a href="#cb9-48" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> main(void) {</span>
+<span id="cb9-49"><a href="#cb9-49" aria-hidden="true" tabindex="-1"></a>    <span class="bu">int</span> status <span class="op">=</span> yyparse()<span class="op">;</span></span>
+<span id="cb9-50"><a href="#cb9-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="op">!</span>status)</span>
+<span id="cb9-51"><a href="#cb9-51" aria-hidden="true" tabindex="-1"></a>        printf(<span class="st">&quot;</span><span class="sc">%s</span><span class="st">(</span><span class="sc">%s</span><span class="st">(</span><span class="sc">%s</span><span class="st">), </span><span class="sc">%s</span><span class="st">(</span><span class="sc">%s</span><span class="st">))</span><span class="ch">\n</span><span class="st">&quot;</span>, root<span class="op">-&gt;</span>kind,</span>
+<span id="cb9-52"><a href="#cb9-52" aria-hidden="true" tabindex="-1"></a>               root<span class="op">-&gt;</span>left<span class="op">-&gt;</span>kind, root<span class="op">-&gt;</span>left<span class="op">-&gt;</span>text,</span>
+<span id="cb9-53"><a href="#cb9-53" aria-hidden="true" tabindex="-1"></a>               root<span class="op">-&gt;</span>right<span class="op">-&gt;</span>kind, root<span class="op">-&gt;</span>right<span class="op">-&gt;</span>text)<span class="op">;</span></span>
+<span id="cb9-54"><a href="#cb9-54" aria-hidden="true" tabindex="-1"></a>    arena_destroy(<span class="op">&amp;</span>ast_arena)<span class="op">;</span></span>
+<span id="cb9-55"><a href="#cb9-55" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> status<span class="op">;</span></span>
+<span id="cb9-56"><a href="#cb9-56" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+</div>
+<div id="tutorial2-cell13" class="cell code">
+<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>make tree</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>.<span class="op">/</span>tree <span class="op">|</span> tee actual.txt</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;Axis(Name(B), Integer(4))</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> diff <span class="op">-</span> actual.txt</span></code></pre></div>
+</div>
+<div id="tutorial2-cell14" class="cell markdown">
+<p><strong>Predict–modify–diagnose:</strong> change the identifier spelling in <code>yylex</code> from <code>B</code> to <code>C</code> and rebuild. Which printed field should change? The grammar is unchanged: names are data, not separate grammar rules. Restore <code>B</code> afterwards.</p>
+<p>Notice that <code>:=</code> and <code>;</code> have no AST nodes. They organize the source; the AST retains the declaration's meaning. The toy printer runs only after successful parsing. The project must similarly not publish a partial AST on failure.</p>
+<h2 id="connect-this-to-project-stage-2">Connect this to Project Stage 2</h2>
+<p>Keep the project's supplied Makefile and driver, not the toy's <code>main</code> or fixed token arrays.</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Toy</th>
+<th>Stage 2 starter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fixed tokens from <code>yylex</code></td>
+<td>Supplied <code>token_adapter.c</code> provides tokens and locations</td>
+</tr>
+<tr>
+<td>Borrowed string semantic values</td>
+<td>Borrowed <code>const struct token *</code>; read the token's <code>text</code></td>
+</tr>
+<tr>
+<td>Nodes and copied text in <code>ast_arena</code></td>
+<td>Your native AST in <code>parser_arena</code>, root in <code>parsed_ast</code></td>
+</tr>
+<tr>
+<td>Small tree printer</td>
+<td>Separate <code>ast_to_json</code> checkpoint writer</td>
+</tr>
+</tbody>
+</table>
+<p>JSON is the saved AST format, not the representation grammar actions must construct. The project implements serialization separately.</p>
+<p>From the extracted Stage 2 package, the familiar build/check loop is:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> <span class="at">-C</span> 02_parser</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> <span class="at">-C</span> 02_parser check-starter</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co"># After implementing your parser:</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> <span class="at">-C</span> 02_parser check</span></code></pre></div>
+<p><code>check-starter</code> tests the untouched scaffold, not a solution. <code>check</code> is expected to fail until you implement the stage. Supplied token files let you start without a working Stage 1 scanner.</p>
+<h2 id="recap-and-questions">Recap and questions</h2>
+<p>Check your understanding:</p>
+<ul>
+<li>Why valid individual tokens can form invalid syntax.</li>
+<li>Why a reduction does not guarantee whole-input acceptance.</li>
+<li>How <code>$2</code> and <code>$4</code> become children of the declaration.</li>
+<li>Why an undeclared but syntactically valid name is Stage 3's concern.</li>
+</ul>
+<h3 id="try-another-example">Try another example</h3>
+<p>Sketch the AST for a declaration with another name and extent; mark which tokens become nodes and which disappear. No conflict reports, parser-state reports, or extra tooling are required.</p>
+<p>The final cell removes only demonstration build products; source files remain for inspection.</p>
+</div>
+<div id="tutorial2-cell15" class="cell code">
+<div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">2</span><span class="op">-</span>work</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>make clean</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;Tutorial 2 demonstrations passed; generated files removed.</span><span class="ch">\n</span><span class="st">&#39;</span></span></code></pre></div>
+</div></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="index.html#resources">Course materials</a></footer>
+</body></html>

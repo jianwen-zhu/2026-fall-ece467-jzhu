@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model
+Zoo — ECE467</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="index.html">ECE<span>467</span></a><div><a href="index.html#objectives">Overview</a><a href="index.html#topics">Topics</a><a href="index.html#project">Project</a><a href="index.html#tutorials">Tutorials</a><a href="index.html#resources">Resources</a></div></nav>
+<main id="main" class="reference"><h1 id="model-zoo">Model Zoo</h1>
+<p>Follow tensor programs from a single matrix product to attention and
+a GPT-2 forward pass—the computation that maps input tokens to scores
+for possible next tokens. Each entry includes a formatted view of the
+code and the same source as a raw <code>.ttl</code> file.</p>
+<p>These programs use the course language described in the <a
+href="ttl467.html">TTL467 reference</a>. Attention and GPT-2 are
+optional reading examples with small, fixed dimensions. They are
+separate from the required lab tests and performance benchmarks.</p>
+<h2 id="matrix-multiplication">Matrix multiplication</h2>
+<p>Start by multiplying a 3 × 5 matrix by a 5 × 4 matrix. Each output
+element sums products along the shared dimension. Follow how named axes
+express that sum and determine the 3 × 4 result.</p>
+<p><a href="gemm.html">View formatted code</a> · <a href="gemm.ttl">Raw
+.ttl file</a></p>
+<h2 id="attention">Attention</h2>
+<p>Attention combines information from different positions in a
+sequence. Matrix products produce relevance scores, a causal mask
+excludes future positions, and softmax converts the scores into weights.
+A second matrix product uses those weights to combine values. Follow how
+this computation is assembled from tensor operations.</p>
+<p><a href="attention.html">View formatted code</a> · <a
+href="attention.ttl">Raw .ttl file</a></p>
+<h2 id="gpt-2-forward-pass">GPT-2 forward pass</h2>
+<p>Now follow a complete model. Token and position embeddings convert
+input identifiers into vectors; two transformer layers combine attention
+with feed-forward computations to produce logits, the scores for
+possible next tokens. The source makes normalization and residual
+connections explicit. Its small configuration uses a vocabulary of 32
+and a sequence length of 8 so the shapes are easy to follow.</p>
+<p><a href="gpt2-forward.html">View formatted code</a> · <a
+href="gpt2-forward.ttl">Raw .ttl file</a></p>
+<p>Weights and the causal mask are declared as global inputs. These
+pages provide model source for study; checkpoint loading and text
+generation belong to the host program.</p>
+<p>The language documents and example programs distributed on this site
+are available under the <a href="LICENSE.ttl">MIT
+License</a>.</p></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="index.html#resources">Course materials</a></footer>
+</body></html>

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial 3: Tensor
+fundamentals — ECE467</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="index.html">ECE<span>467</span></a><div><a href="index.html#objectives">Overview</a><a href="index.html#topics">Topics</a><a href="index.html#project">Project</a><a href="index.html#tutorials">Tutorials</a><a href="index.html#resources">Resources</a></div></nav>
+<main id="main" class="reference"><p><a
+href="index.html#tutorials">Tutorials</a> · <a
+href="tutorial3.ipynb">Notebook source</a> · <a
+href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial3.ipynb">Run
+in Colab</a></p>
+<div id="tutorial3-cell0" class="cell markdown">
+<h1 id="tutorial-3-tensor-fundamentals">Tutorial 3: Tensor fundamentals</h1>
+<p>Explore tensor shapes, layout, allocation, execution ordering, and numerical comparisons through libttl's C interface. The executable cells perform CPU calculations and syntax checks; the device examples are source-reading exercises. A CPU runtime is sufficient.</p>
+<p><a href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial3.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab" /></a></p>
+</div>
+<div id="tutorial3-cell1" class="cell markdown">
+<h2 id="setup">Setup</h2>
+<p>Run these setup cells once, then work through the examples in order. In Colab, use a CPU runtime. On your own computer, install Make and a C compiler first.</p>
+</div>
+<div id="tutorial3-cell2" class="cell code">
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>missing<span class="op">=</span><span class="dv">0</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> tool <span class="kw">in</span> make cc<span class="op">;</span> do command <span class="op">-</span>v <span class="st">&quot;$tool&quot;</span> <span class="op">&gt;/</span>dev<span class="op">/</span>null <span class="op">||</span> missing<span class="op">=</span><span class="dv">1</span><span class="op">;</span> done</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> python3 <span class="op">-</span>c <span class="st">&#39;import google.colab&#39;</span> <span class="dv">2</span><span class="op">&gt;/</span>dev<span class="op">/</span>null<span class="op">;</span> then</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> [ <span class="st">&quot;$missing&quot;</span> <span class="op">-</span>eq <span class="dv">1</span> ]<span class="op">;</span> then</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        apt<span class="op">-</span>get <span class="op">-</span>qq update</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        apt<span class="op">-</span>get <span class="op">-</span>qq install <span class="op">-</span>y build<span class="op">-</span>essential</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    fi</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>fi</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> tool <span class="kw">in</span> make cc<span class="op">;</span> do command <span class="op">-</span>v <span class="st">&quot;$tool&quot;</span><span class="op">;</span> done</span></code></pre></div>
+</div>
+<div class="cell markdown">
+<p><em>The notebook's companion-file setup cell restores the included sources. Run it before the examples.</em></p>
+</div>
+<div id="tutorial3-cell4" class="cell markdown">
+<h2 id="check-the-examples">Check the examples</h2>
+<p>The next cell checks the four C examples against libttl's public header. We will then calculate offsets and compare numerical results on the CPU.</p>
+</div>
+<div id="tutorial3-cell5" class="cell code">
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>command <span class="op">-</span>v cc</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>command <span class="op">-</span>v make</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>root<span class="op">=</span><span class="st">&quot;$PWD&quot;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> [ <span class="op">!</span> <span class="op">-</span>f <span class="st">&quot;$root/course/prelabs/02_tensors.c&quot;</span> ]<span class="op">;</span> do</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> [ <span class="st">&quot;$root&quot;</span> <span class="op">=</span> <span class="op">/</span> ]<span class="op">;</span> then</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>        echo <span class="st">&quot;Run the companion-file setup cell first.&quot;</span> <span class="op">&gt;&amp;</span><span class="dv">2</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>        exit <span class="dv">1</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    fi</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    root<span class="op">=</span>$(dirname <span class="st">&quot;$root&quot;</span>)</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>done</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>mkdir <span class="op">-</span>p .tutorial<span class="op">-</span><span class="dv">3</span><span class="op">-</span>work</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;</span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="st">&quot;$root&quot;</span> <span class="op">&gt;</span> .tutorial<span class="op">-</span><span class="dv">3</span><span class="op">-</span>work<span class="op">/</span>course<span class="op">-</span>root</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> source <span class="kw">in</span> <span class="st">&quot;$root&quot;</span><span class="op">/</span>course<span class="op">/</span>prelabs<span class="op">/</span><span class="dv">0</span><span class="op">*</span>.c<span class="op">;</span> do</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    cc <span class="op">-</span>std<span class="op">=</span>c11 <span class="op">-</span>Wall <span class="op">-</span>Wextra <span class="op">-</span>Wpedantic <span class="op">-</span>fsyntax<span class="op">-</span>only <span class="op">\</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>       <span class="op">-</span>I<span class="st">&quot;$root/deps/libttl/include&quot;</span> <span class="op">-</span>I<span class="st">&quot;$root/course/prelabs&quot;</span> <span class="st">&quot;$source&quot;</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>done</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>echo <span class="st">&#39;Four C pre-labs passed local syntax checks (not device execution).&#39;</span></span></code></pre></div>
+</div>
+<div id="tutorial3-cell6" class="cell markdown">
+<h2 id="shape-and-layout">Shape and layout</h2>
+<p>Read the contiguous-layout calculation in <code>course/prelabs/01_dtypes_and_layout.c</code>. For shape <code>[2,3,4]</code>, row-major <strong>element strides</strong> are <code>[12,4,1]</code>. Strides count elements, not bytes.</p>
+<p><strong>Predict:</strong> for index <code>[1,2,3]</code>, compute the element offset, then its FP16 byte offset. Predict before running the small local C calculation below.</p>
+<p>The same program also checks the finite-value tolerance rule used later: <code>abs(actual-reference) &lt;= atol + rtol*abs(reference)</code>. It is a CPU calculation, not an emulation of a device or a replacement implementation of libttl.</p>
+</div>
+<div id="tutorial3-cell7" class="cell code">
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">3</span><span class="op">-</span>work<span class="op">/</span>fundamentals.c</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">#include &lt;math.h&gt;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">#include &lt;stdio.h&gt;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> main(void) {</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    const <span class="bu">int</span> shape[] <span class="op">=</span> {<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>}<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    const <span class="bu">int</span> stride[] <span class="op">=</span> {<span class="dv">12</span>, <span class="dv">4</span>, <span class="dv">1</span>}<span class="op">;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    const <span class="bu">int</span> index[] <span class="op">=</span> {<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>}<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    const <span class="bu">int</span> offset <span class="op">=</span> index[<span class="dv">0</span>]<span class="op">*</span>stride[<span class="dv">0</span>] <span class="op">+</span> index[<span class="dv">1</span>]<span class="op">*</span>stride[<span class="dv">1</span>] <span class="op">+</span> index[<span class="dv">2</span>]<span class="op">*</span>stride[<span class="dv">2</span>]<span class="op">;</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    printf(<span class="st">&quot;shape=[</span><span class="sc">%d</span><span class="st">,</span><span class="sc">%d</span><span class="st">,</span><span class="sc">%d</span><span class="st">] element_offset=</span><span class="sc">%d</span><span class="st"> fp16_byte_offset=</span><span class="sc">%d</span><span class="ch">\n</span><span class="st">&quot;</span>,</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>           shape[<span class="dv">0</span>], shape[<span class="dv">1</span>], shape[<span class="dv">2</span>], offset, <span class="dv">2</span><span class="op">*</span>offset)<span class="op">;</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (offset <span class="op">!=</span> <span class="dv">23</span> <span class="op">||</span> <span class="dv">2</span><span class="op">*</span>offset <span class="op">!=</span> <span class="dv">46</span>) <span class="cf">return</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    const <span class="bu">float</span> actual[] <span class="op">=</span> {<span class="fl">1.0</span><span class="er">f</span>, <span class="fl">2.0</span><span class="er">f</span>, <span class="fl">3.001</span><span class="er">f</span>, <span class="fl">4.0</span><span class="er">f</span>}<span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    const <span class="bu">float</span> reference[] <span class="op">=</span> {<span class="fl">1.0</span><span class="er">f</span>, <span class="fl">2.0</span><span class="er">f</span>, <span class="fl">3.0</span><span class="er">f</span>, <span class="fl">4.0</span><span class="er">f</span>}<span class="op">;</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    unsigned tight <span class="op">=</span> <span class="dv">0</span>, loose <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (unsigned i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">4</span><span class="op">;</span> <span class="op">++</span>i) {</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>        double error <span class="op">=</span> fabs((double)actual[i] <span class="op">-</span> reference[i])<span class="op">;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>        tight <span class="op">+=</span> error <span class="op">&gt;</span> <span class="fl">1e-6</span> <span class="op">+</span> <span class="fl">1e-6</span><span class="op">*</span>fabs(reference[i])<span class="op">;</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>        loose <span class="op">+=</span> error <span class="op">&gt;</span> <span class="fl">1e-6</span> <span class="op">+</span> <span class="fl">1e-3</span><span class="op">*</span>fabs(reference[i])<span class="op">;</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    printf(<span class="st">&quot;tight mismatches=</span><span class="sc">%u</span><span class="st">; loose mismatches=</span><span class="sc">%u</span><span class="ch">\n</span><span class="st">&quot;</span>, tight, loose)<span class="op">;</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tight <span class="op">!=</span> <span class="dv">1</span> <span class="op">||</span> loose <span class="op">!=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+</div>
+<div id="tutorial3-cell8" class="cell code">
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">3</span><span class="op">-</span>work<span class="op">/</span>Makefile</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>CC <span class="op">=</span> cc</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>CFLAGS <span class="op">=</span> <span class="op">-</span>std<span class="op">=</span>c11 <span class="op">-</span>O0 <span class="op">-</span>g <span class="op">-</span>Wall <span class="op">-</span>Wextra <span class="op">-</span>Wpedantic</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>.PHONY: check clean</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>check: fundamentals</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a> .<span class="op">/</span>fundamentals</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>fundamentals: fundamentals.c</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a> $(CC) $(CFLAGS) $<span class="op">&lt;</span> <span class="op">-</span>o $<span class="op">@</span> <span class="op">-</span>lm</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>clean:</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>   $(RM) fundamentals</span></code></pre></div>
+</div>
+<div id="tutorial3-cell9" class="cell code">
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>make <span class="op">-</span>C .tutorial<span class="op">-</span><span class="dv">3</span><span class="op">-</span>work check</span></code></pre></div>
+</div>
+<div id="tutorial3-cell10" class="cell markdown">
+<p>Expected: element offset <strong>23</strong>, FP16 byte offset <strong>46</strong>, one tight-tolerance mismatch and zero loose-tolerance mismatches.</p>
+<p><strong>Modify–diagnose:</strong> use index <code>[0,1,2]</code>. Predict offsets <strong>6</strong> and <strong>12</strong>. The unchanged expected-value check fails; explain it before updating that check. Restore the example before Run All.</p>
+<h2 id="allocate-a-tensor-and-transfer-data">Allocate a tensor and transfer data</h2>
+<p>Open <code>course/prelabs/02_tensors.c</code> (the next cell displays it). The tensor is an opaque handle: the API exposes shape and contents without exposing a backend pointer.</p>
+<p>Trace five steps: open device, allocate, write host data, read metadata/data, destroy resources. Allocation with <code>ttl_tensor_empty</code> does not initialize values. The following write establishes the contents before they are read.</p>
+<p><strong>Predict:</strong> shape <code>[3,4]</code>, FP32: rank <strong>2</strong>, strides <strong>[4,1]</strong>, <strong>48 bytes</strong>, device placement, contiguous layout. Which two calls cross the host/device boundary?</p>
+</div>
+<div id="tutorial3-cell11" class="cell code">
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>root<span class="op">=</span><span class="st">&quot;$(cat .tutorial-3-work/course-root)&quot;</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>sed <span class="op">-</span>n <span class="st">&#39;1,120p&#39;</span> <span class="st">&quot;$root/course/prelabs/02_tensors.c&quot;</span></span></code></pre></div>
+</div>
+<div id="tutorial3-cell12" class="cell markdown">
+<p><strong>Short exercise:</strong> predict what changes if the allocation uses <code>ttl_tensor_empty_host</code>. It no longer takes the <code>device</code> argument; metadata stays the same except placement. Explain the change in the supplied C source. Changing a shape does not itself transfer or initialize data.</p>
+<h2 id="ordering-is-part-of-correctness">Ordering is part of correctness</h2>
+<p>Read the central sequence from <code>03_streams.c</code>:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>ttl_tensor_copy<span class="op">(</span>middle<span class="op">,</span> source<span class="op">,</span> producer<span class="op">);</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>ttl_stream_wait<span class="op">(</span>consumer<span class="op">,</span> producer<span class="op">);</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>ttl_tensor_copy<span class="op">(</span>destination<span class="op">,</span> middle<span class="op">,</span> consumer<span class="op">);</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>ttl_stream_synchronize<span class="op">(</span>consumer<span class="op">);</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>ttl_tensor_read<span class="op">(</span>destination<span class="op">,</span> output<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>output<span class="op">));</span></span></code></pre></div>
+<p>The supplied source checks every return status. A stream orders its own queued work. The wait adds a cross-stream dependency; synchronization blocks the host until earlier consumer work, including its accepted dependencies, completes.</p>
+<p><strong>Predict:</strong> draw <code>source -&gt; middle -&gt; destination -&gt; host read</code>. Which edge needs the cross-stream wait? Which call blocks the CPU?</p>
+<p><strong>Reason about the code:</strong> suppose the stream wait is replaced with <code>ttl_stream_synchronize(producer)</code>. The result remains correct, but the CPU waits before queuing consumer work. Explain how the ordering changes.</p>
+<h2 id="correctness-is-a-numerical-policy">Correctness is a numerical policy</h2>
+<p>Read the first comparison in <code>04_correctness.c</code>. The actual FP32 values are <code>[1,2,3.001,4]</code>; the host reference is <code>[1,2,3,4]</code>. <code>ttl_close</code> takes <strong>relative tolerance first, absolute tolerance second</strong>.</p>
+<p><strong>Predict:</strong> with <code>(rtol=1e-6, atol=1e-6)</code>, one mismatch at zero-based index <strong>2</strong>; with <code>(rtol=1e-3, atol=1e-6)</code>, it passes. The local calculation above demonstrated why. The max absolute error is approximately 0.001, not necessarily that exact decimal in FP32.</p>
+<p><strong>Short exercise:</strong> suppose the actual values were <code>[1, 2.001, 3, 4]</code> with the same reference. Which zero-based index has the largest absolute error? Apply each tolerance rule above to decide whether the comparison passes.</p>
+</div>
+<div id="tutorial3-cell13" class="cell markdown">
+<h2 id="review">Review</h2>
+<p>Explain the lifecycle: allocate, establish contents, order work, synchronize, compare, and release resources. Which steps involve the host, and which involve the device?</p>
+<p>For further reading, inspect the supplied stream and numerical-comparison examples. <a href="https://github.com/jianwen-zhu/cloudmake">CloudMake</a> provides a local-to-cloud workflow for running configured GPU projects. This notebook's calculations and source inspection run directly in Jupyter or Colab.</p>
+</div>
+<div id="tutorial3-cell14" class="cell code">
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>make <span class="op">-</span>C .tutorial<span class="op">-</span><span class="dv">3</span><span class="op">-</span>work clean</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>echo <span class="st">&#39;Tutorial 3 CPU checks complete.&#39;</span></span></code></pre></div>
+</div></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="index.html#resources">Course materials</a></footer>
+</body></html>

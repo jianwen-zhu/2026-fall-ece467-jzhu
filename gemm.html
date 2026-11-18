@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matrix
+multiplication — ECE467</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="index.html">ECE<span>467</span></a><div><a href="index.html#objectives">Overview</a><a href="index.html#topics">Topics</a><a href="index.html#project">Project</a><a href="index.html#tutorials">Tutorials</a><a href="index.html#resources">Resources</a></div></nav>
+<main id="main" class="reference"><h1 id="matrix-multiplication">Matrix
+multiplication</h1>
+<p><a href="model-zoo.html">Model Zoo</a> · <a href="gemm.ttl">Raw .ttl
+file</a></p>
+<pre class="text"><code>axis row := 3, shared := 5, column := 4;
+export function gemm(
+    a: f32[row shared],
+    b: f32[shared column]
+) -&gt; f32[row column] :=
+    let
+        %0 = @einsum[row shared, shared column -&gt; row column](a, b)
+            map=@multiply_f32 reduce=@add_f32
+    in
+        %0;
+</code></pre>
+<p><a href="LICENSE.ttl">MIT License</a></p></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="index.html#resources">Course materials</a></footer>
+</body></html>

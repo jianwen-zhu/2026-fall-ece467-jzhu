@@ -1,0 +1,26 @@
+axis batch := 1, token := 3, source := 3, head := 1, channel := 2, projection := 2;
+
+global causal_mask: bool[token source];
+
+export function attention(
+    query: f32[batch token head channel],
+    key: f32[batch token head channel],
+    value: f32[batch token head channel]
+) -> f32[batch token projection] :=
+    let
+        %0 = @rearrange[batch token head channel -> batch source head channel](key);
+        %1 = @rearrange[batch token head channel -> batch source head channel](value);
+        %2 = @einsum[batch token head channel, batch source head channel -> batch token source head](query, %0) map=@multiply_f32 reduce=@add_f32;
+        %3 = 0.7071067811865476;
+        %4 = @multiply_f32(%2, %3);
+        %5 = -3.402823466e+38;
+        %6 = @select_f32(causal_mask, %4, %5);
+        %7 = @einsum[batch token source head -> batch token head](%6) reduce=@maximum_f32;
+        %8 = @subtract_f32(%6, %7);
+        %9 = @exp_f32(%8);
+        %10 = @einsum[batch token source head -> batch token head](%9) reduce=@add_f32;
+        %11 = @divide_f32(%9, %10);
+        %12 = @einsum[batch token source head, batch source head channel -> batch token head channel](%11, %1) map=@multiply_f32 reduce=@add_f32;
+        %13 = @rearrange[batch token head channel -> batch token projection := [head * channel]](%12)
+    in
+        %13;

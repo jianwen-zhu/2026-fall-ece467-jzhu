@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial 5: Watching a real tensor
+compiler — ECE467</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="index.html">ECE<span>467</span></a><div><a href="index.html#objectives">Overview</a><a href="index.html#topics">Topics</a><a href="index.html#project">Project</a><a href="index.html#tutorials">Tutorials</a><a href="index.html#resources">Resources</a></div></nav>
+<main id="main" class="reference"><p><a
+href="index.html#tutorials">Tutorials</a> · <a
+href="tutorial5.ipynb">Notebook source</a> · <a
+href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial5.ipynb">Run
+in Colab</a></p>
+<div id="tutorial5-cell0" class="cell markdown">
+<h1 id="tutorial-5-watching-a-real-tensor-compiler">Tutorial 5: Watching a real tensor compiler</h1>
+<p>Follow the same computation through a C reference, a GPU kernel, and a TileLang program. Inspect a saved compiler trace to see how tile-level operations become lower-level code.</p>
+<p><strong>What changes during compilation, and what must stay the same?</strong></p>
+<p>This walkthrough uses a historical Metal trace and runs on a CPU runtime.</p>
+<p><a href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial5.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab" /></a></p>
+</div>
+<div id="tutorial5-cell1" class="cell markdown">
+<h2 id="setup">Setup</h2>
+<p>Run these setup cells once, then work through the examples in order. In Colab, use a CPU runtime. This walkthrough uses Python's standard library; no compiler or extra packages are needed.</p>
+</div>
+<div class="cell markdown">
+<p><em>The notebook's companion-file setup cell restores the included sources. Run it before the examples.</em></p>
+</div>
+<div id="tutorial5-cell3" class="cell markdown">
+<h2 id="explore-the-sources">Explore the sources</h2>
+<p>The setup cell supplies the example sources and saved trace. The following cells display selected code so you can compare its representations.</p>
+</div>
+<div id="tutorial5-cell4" class="cell code">
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>root<span class="op">=</span><span class="st">&quot;$PWD&quot;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>cd <span class="st">&quot;$root&quot;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="bu">file</span> <span class="kw">in</span> course<span class="op">/</span>labs<span class="op">/</span>harness.c course<span class="op">/</span>labs<span class="op">/</span>axpy<span class="op">/</span><span class="dv">0</span><span class="er">3_tilelang</span><span class="op">/</span>axpy.py <span class="op">\</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>            course<span class="op">/</span>labs<span class="op">/</span>gemm<span class="op">/</span><span class="dv">0</span><span class="er">3_tilelang</span><span class="op">/</span>gemm.py course<span class="op">/</span>labs<span class="op">/</span>gemm<span class="op">/</span><span class="dv">0</span><span class="er">4_watch</span><span class="op">/</span>passes.txt <span class="op">\</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>            deps<span class="op">/</span>libttl<span class="op">/</span>include<span class="op">/</span>libttl.h<span class="op">;</span> do</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    test <span class="op">-</span>f <span class="st">&quot;$file&quot;</span> <span class="op">||</span> { echo <span class="st">&quot;Missing $file: run the companion-file setup cell first.&quot;</span> <span class="op">&gt;&amp;</span><span class="dv">2</span><span class="op">;</span> exit <span class="dv">1</span><span class="op">;</span> }</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>done</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;Companion files ready: </span><span class="sc">%s</span><span class="ch">\n</span><span class="st">Local files only; GPU execution has not been checked.</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="st">&quot;$root&quot;</span></span></code></pre></div>
+</div>
+<div id="tutorial5-cell5" class="cell markdown">
+<h2 id="let-us-follow-one-axpy-element">Let us follow one AXPY element</h2>
+<p>AXPY computes <code>output[i] = alpha*x[i] + y[i]</code>. The C reference defines that result. The GPU kernel chooses which thread computes each element.</p>
+<p><strong>Before looking below:</strong> with 256 threads per block, which block and local thread compute element 700?</p>
+<p>We will look at just three pieces: the reference loop, the native index calculation, and the corresponding TileLang calculation. TileLang is a GPU kernel language; its Python source is compiled, while the application harness remains C.</p>
+</div>
+<div id="tutorial5-cell6" class="cell code">
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>root<span class="op">=</span><span class="st">&quot;$PWD&quot;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>cd <span class="st">&quot;$root&quot;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;C reference:</span><span class="ch">\n</span><span class="st">&#39;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>sed <span class="op">-</span>n <span class="st">&#39;/^void axpy_reference(/,$p&#39;</span> course<span class="op">/</span>labs<span class="op">/</span>axpy<span class="op">/</span><span class="dv">0</span><span class="er">1_cpu</span><span class="op">/</span>axpy_reference.c</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;</span><span class="ch">\n</span><span class="st">Handwritten CUDA:</span><span class="ch">\n</span><span class="st">&#39;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>cat course<span class="op">/</span>labs<span class="op">/</span>axpy<span class="op">/</span><span class="dv">0</span><span class="er">2_device</span><span class="op">/</span>axpy.cu</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;</span><span class="ch">\n</span><span class="st">TileLang:</span><span class="ch">\n</span><span class="st">&#39;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>cat course<span class="op">/</span>labs<span class="op">/</span>axpy<span class="op">/</span><span class="dv">0</span><span class="er">3_tilelang</span><span class="op">/</span>axpy.py</span></code></pre></div>
+</div>
+<div id="tutorial5-cell7" class="cell markdown">
+<p>Element 700 is computed by <strong>block 2, thread 188</strong>. Notice that the formula survives the change of language.</p>
+<p>Now change the block size from 256 to 128 threads for 1024 elements. We need eight blocks, and the grid, thread count, <code>T.Parallel</code>, index stride, and <code>TTL_LAUNCH</code> must agree. Changing one number is not enough.</p>
+<p>What has not changed is the check. <strong>libttl</strong>, the Tiny Tensor Library, lets the C runner load a module, launch it, synchronize, and compare its output with the reference using <code>ttl_close</code>. The module's JSON manifest describes its tensor/scalar interface. Physical argument packaging may differ between producers without changing AXPY's meaning.</p>
+<p><strong>Takeaway:</strong> we can replace the kernel producer without replacing the application's reference or numerical check. The complete sequence is in <code>course/labs/runner_ttl.c</code>.</p>
+</div>
+<div id="tutorial5-cell8" class="cell markdown">
+<h2 id="gemm-makes-the-schedule-visible">GEMM makes the schedule visible</h2>
+<p>Our next example multiplies two 128×128 FP16 matrices, accumulating into FP32. For one output element, the reference computes:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">size_t</span> inner <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> inner <span class="op">&lt;</span> k<span class="op">;</span> <span class="op">++</span>inner<span class="op">)</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    accumulator <span class="op">+=</span> A<span class="op">[</span>row<span class="op">*</span>k <span class="op">+</span> inner<span class="op">]</span> <span class="op">*</span> B<span class="op">[</span>inner<span class="op">*</span>n <span class="op">+</span> column<span class="op">];</span></span></code></pre></div>
+<p>This excerpt shows the addressing; the actual reference converts FP16 input bits to FP32 before multiplying.</p>
+<p>Let us look for <strong>shared tiles, two barriers, and the inner product</strong> in the handwritten kernel. Then find the corresponding tile operations in TileLang. A barrier coordinates threads before data is consumed or overwritten.</p>
+</div>
+<div id="tutorial5-cell9" class="cell code">
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>root<span class="op">=</span><span class="st">&quot;$PWD&quot;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>cd <span class="st">&quot;$root&quot;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;Handwritten tiled CUDA:</span><span class="ch">\n</span><span class="st">&#39;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>sed <span class="op">-</span>n <span class="st">&#39;/    __shared__/,$p&#39;</span> course<span class="op">/</span>labs<span class="op">/</span>gemm<span class="op">/</span><span class="dv">0</span><span class="er">2_device</span><span class="op">/</span>gemm.cu</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;</span><span class="ch">\n</span><span class="st">TileLang tile sizes and operations:</span><span class="ch">\n</span><span class="st">&#39;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>sed <span class="op">-</span>n <span class="st">&#39;/TTL_SPECIALIZATIONS/,$p&#39;</span> course<span class="op">/</span>labs<span class="op">/</span>gemm<span class="op">/</span><span class="dv">0</span><span class="er">3_tilelang</span><span class="op">/</span>gemm.py</span></code></pre></div>
+</div>
+<div id="tutorial5-cell10" class="cell markdown">
+<p>For local thread <code>(x,y)=(3,5)</code>, in block (0,0), the second k tile loads <strong>A[5,19] and B[21,3]</strong>. The first barrier makes the loaded tile available; the second prevents premature reuse of its storage. Do not remove a barrier experimentally: a race that happens to pass is still incorrect.</p>
+<p>In TileLang, <code>a_shared</code> is 64×32 FP16, <code>b_shared</code> is 32×64 FP16, and the accumulator is 64×64 FP32 distributed across threads. Each shared tile is 4096 bytes; three pipeline stages for both account for 24576 shared bytes.</p>
+<p><strong>What should we notice?</strong> The source has already chosen tile sizes, memory scopes, and a pipeline depth. The compiler realizes that schedule; this example does not show it discovering every scheduling decision automatically. The handwritten 16×16 schedule and the TileLang schedule need not be identical to compute the same answer.</p>
+</div>
+<div id="tutorial5-cell11" class="cell markdown">
+<h2 id="where-did-the-tile-operation-go">Where did the tile operation go?</h2>
+<p>Stage <code>04_watch</code> uses the <strong>same GEMM source and manifest as stage 03</strong>. It runs the complete compiler, builds the generated kernel, and checks it with the same harness. It saves a few intermediate representations (<strong>IRs</strong>) so we can observe the lowering.</p>
+<p>We will concentrate on <strong>one <code>LowerTileOp</code> diff</strong>, not tour every compiler pass. A diff compares the representation immediately before and after a pass: removed lines begin with <code>-</code>, added lines with <code>+</code>.</p>
+<p><strong>Predict:</strong> what might replace a tile-level <code>T.gemm</code>? Look for a lower-level matrix operation or backend helper, not necessarily a single scalar multiplication.</p>
+<p>The next cell displays the bundled historical Metal diff (2026-08-28). It does not run compilation or certify the current build. CUDA uses different backend operations. If there is more than one occurrence, the filename identifies which one we are viewing; use the adjacent before/after files for context.</p>
+</div>
+<div id="tutorial5-cell12" class="cell code">
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>root<span class="op">=</span><span class="st">&quot;$PWD&quot;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>cd <span class="st">&quot;$root&quot;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>selected<span class="op">=</span>trace<span class="op">/</span>selected</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> [ <span class="op">!</span> <span class="op">-</span>f <span class="st">&quot;$selected/00_tile_program.tir&quot;</span> ]<span class="op">;</span> then</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    echo <span class="st">&#39;Run the companion-file setup cell to restore the trace.&#39;</span> <span class="op">&gt;&amp;</span><span class="dv">2</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    exit <span class="dv">1</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>fi</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>echo <span class="st">&#39;Historical Metal trace (2026-08-28), not a fresh CUDA result.&#39;</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>found<span class="op">=</span><span class="dv">0</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="bu">file</span> <span class="kw">in</span> <span class="st">&quot;$selected&quot;</span><span class="op">/*</span>LowerTileOp<span class="op">*</span>.diff<span class="op">;</span> do</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    [ <span class="op">-</span>f <span class="st">&quot;$file&quot;</span> ] <span class="op">||</span> <span class="cf">continue</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    printf <span class="st">&#39;</span><span class="sc">%s</span><span class="st"> (first 100 lines)</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="st">&quot;$file&quot;</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    sed <span class="op">-</span>n <span class="st">&#39;1,100p&#39;</span> <span class="st">&quot;$file&quot;</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    found<span class="op">=</span><span class="dv">1</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">break</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>done</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> [ <span class="st">&quot;$found&quot;</span> <span class="op">-</span>eq <span class="dv">0</span> ]<span class="op">;</span> then</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    echo <span class="st">&#39;No LowerTileOp diff matched; inspect selected filenames before choosing a trace.&#39;</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>    find <span class="st">&quot;$selected&quot;</span> <span class="op">-</span>maxdepth <span class="dv">1</span> <span class="op">-</span><span class="bu">type</span> f <span class="op">-</span><span class="bu">print</span> <span class="op">|</span> sort</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>fi</span></code></pre></div>
+</div>
+<div id="tutorial5-cell13" class="cell markdown">
+<p>Let us follow <strong>one operation</strong>, ignoring unrelated generated names:</p>
+<ol>
+<li>Find its abstract form in the before file.</li>
+<li>Find the replacement in the after file. What execution detail is now explicit?</li>
+<li>Open the bundled <code>trace/selected/kernel.metal</code> and find the corresponding native operation or helper.</li>
+</ol>
+<p>Use <code>trace/selected/00_tile_program.tir</code> as the starting point, and the selected before/after files when the displayed diff needs more context. If this occurrence has no relevant change, say so and inspect the next occurrence rather than inventing a transformation.</p>
+<p>Other saved checkpoints expose these execution details:</p>
+<table>
+<thead>
+<tr>
+<th>Pass</th>
+<th>Detail to follow when needed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MaterializeKernelLaunch</code></td>
+<td>Grid and threads</td>
+</tr>
+<tr>
+<td><code>InjectSoftwarePipeline</code></td>
+<td>Staged reduction loop</td>
+</tr>
+<tr>
+<td><code>LayoutInference</code></td>
+<td>Thread-distributed layouts</td>
+</tr>
+<tr>
+<td><code>StorageRewrite</code></td>
+<td>Physical storage reuse</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Takeaway:</strong> lowering changes representation while preserving computation. Correctness is checked by executing the result against the reference, not by recognizing a familiar pass name.</p>
+</div>
+<div id="tutorial5-cell14" class="cell markdown">
+<h2 id="diagnose-a-broken-launch">Diagnose a broken launch</h2>
+<p>Consider this change: reduce AXPY's native grid from four blocks to three, leaving the problem size at 1024.</p>
+<p><strong>Predict first:</strong> which outputs are never written? They are indices <strong>768–1023</strong>. Those values are not necessarily zero: allocation does not initialize the output.</p>
+<p>In a live experiment, compare the prediction with the actual failure report. Offline, explain which check should detect the missing outputs; no observed failure report is bundled. Would this be a compilation, module-validation, launch, or numerical-comparison failure? These are different observations. A valid manifest does not prove correct arithmetic, and an old output file does not prove that the latest command succeeded.</p>
+<p>Explain these three points in your own words:</p>
+<ul>
+<li>What stayed fixed when we replaced handwritten code with TileLang?</li>
+<li>Which scheduling decisions were already in the source?</li>
+<li>What did our selected compiler pass make explicit?</li>
+</ul>
+<p>If you can connect the source, the trace, and the unchanged correctness check, you have the central lesson.</p>
+</div>
+<div id="tutorial5-cell15" class="cell markdown">
+<h2 id="further-exploration">Further exploration</h2>
+<p>Choose another saved pass and identify one change in representation. Explain which computation stays the same. The GEMM source retains its TileLang attribution and MIT notice.</p>
+</div></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="index.html#resources">Course materials</a></footer>
+</body></html>

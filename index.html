@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ECE467 Compilers and Interpreters at the University of Toronto: learning outcomes, lecture topics, and a five-stage tensor compiler project.">
+<title>ECE467 — Compilers and Interpreters</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="#top">ECE<span>467</span></a><div><a href="#objectives">Overview</a><a href="#topics">Topics</a><a href="#project">Project</a><a href="#tutorials">Tutorials</a><a href="#resources">Resources</a></div></nav>
+<main id="main"><header class="hero" id="top">
+<p class="eyebrow">University of Toronto · Electrical &amp; Computer Engineering</p>
+<h1>Compilers and interpreters.<em class="hero-tagline">Behind the code you run.</em></h1>
+<p class="byline">ECE467 · Fall 2026 · Jianwen Zhu</p>
+</header>
+
+<h2 id="objectives">Overview</h2>
+<p>Compilers are more ubiquitous than most programmers realize. Their
+ideas power browser scripts, database queries, and the tensor
+computations behind language models. ECE467 reveals the machinery behind
+operations you have taken for granted: how a system understands a
+program and turns it into work a machine can execute.</p>
+<p>You will follow that journey from source text to executable code:
+recognizing tokens and grammatical structure, resolving names and
+checking types, representing and analyzing programs, and generating
+efficient instructions. You will learn how runtime storage supports
+function calls and how optimizations change a program while preserving
+its meaning. Together, these ideas explain the connection between the
+code you write and its behavior on the hardware.</p>
+<p>Building a compiler also develops the <strong>art of
+programming</strong> — choosing representations and interfaces that make
+complex software manageable — and the <strong>science of
+programming</strong> — turning formal models into working algorithms.
+These benefits extend well beyond compiler development.</p>
+<p>The project brings this foundation to the <strong>frontier of AI
+infrastructure</strong>. You build a compiler for a language that
+operates on tensors—multidimensional arrays—to express computations used
+in modern large language models. Your generated programs target graphics
+processing units (GPUs). You test their results and measure the
+performance of your optimizations.</p>
+<h2 id="topics">Topics</h2>
+<p>The lectures develop the ideas needed to understand and build a
+compiler. The weekly topics and readings below follow the course
+schedule on Quercus, the university's course platform.</p>
+<p>Reading numbers refer to Alfred V. Aho, Monica S. Lam, Ravi Sethi,
+and Jeffrey D. Ullman, <em>Compilers: Principles, Techniques, and
+Tools</em>, <strong>2nd edition</strong> (the <strong>Dragon
+Book</strong>). <a href="https://suif.stanford.edu/dragonbook/">Textbook
+companion website</a>. “Notes” refers to lecture notes on Quercus.</p>
+<div class="table-scroll" role="region" aria-label="Lecture topic schedule" tabindex="0">
+
+<table>
+<thead>
+<tr>
+<th>Week</th>
+<th>Lecture topic (reading)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Introduction, Lexical Analysis by Hand (Notes)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Regular Expression, Finite Automata (3.3-3.6)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Finite Automata (3.7)<br>Memory Management (Notes)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Grammar and Top-Down Parsing (4.1-4.4)<br>LL(k) Parsing (Notes)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>LR Parsing (4.5-4.6)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>LR Parsing (4.7)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Abstract Syntax Tree (Notes)<br>Semantic Analysis (6.1-6.3)</td>
+</tr>
+<tr>
+<td>8 (study break)</td>
+<td>No classes</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Intermediate Representation (IR) (6.1-6.3)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Code Generation (6.6-6.9)<br>Runtime System (7.1-7.4)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Middle End (8.1-8.3)</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Backend (8.8-8.9/10.3)</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Advanced Topics (Notes)</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Advanced Topics (Notes)</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="project">Project</h2>
+<p>Put the lecture material into practice by implementing a compiler in
+C for <a href="ttl467.html">ECE467 Tiny Tensor Language (TTL467)</a>.
+The language names tensor dimensions, applies operations to individual
+elements, and combines values through reductions such as sums. Your
+compiler emits programs in <strong>TileLang</strong>, a language for
+writing GPU kernels. A kernel is a function executed by GPU threads; the
+supplied tools compile and run these kernels.</p>
+<p>The target application is <strong>large language model
+inference</strong>: using a trained model to predict the next text
+token, such as a word or word fragment. Explore the computations behind
+that prediction in the <a href="model-zoo.html">Model Zoo</a>, from <a
+href="gemm.html">matrix multiplication</a> to <a
+href="attention.html">attention</a> and a <a
+href="gpt2-forward.html">GPT-2 forward pass</a>. The optimization
+challenge is to make these computations run faster while preserving
+their results.</p>
+<p>Two supporting tools connect your compiler to working hardware. <a
+href="https://github.com/jianwen-zhu/libttl">libttl (Tiny Tensor
+Library)</a> provides the C interface for managing tensors and executing
+compiled programs. <a
+href="https://github.com/jianwen-zhu/cloudmake">CloudMake</a> runs your
+project's Make targets locally or on cloud hardware, so you can keep
+editing locally while building and testing on a GPU.</p>
+<p>The project is split into five stages, each implementing one compiler
+phase. You first recover the program's structure and check its meaning,
+then generate working code and optimize it. Supplied intermediate files
+let you test each phase independently before connecting the phases.</p>
+<h3 id="lexical-analysis">01 · Lexical Analysis</h3>
+<p>Implement a scanner that groups source characters into tokens such as
+keywords, identifiers, and numbers. Report invalid input and pass the
+token stream to the parser.</p>
+<h3 id="syntax-analysis">02 · Syntax Analysis</h3>
+<p>Implement a parser that checks the token stream against TTL467's
+grammar. Construct an abstract syntax tree representing declarations,
+expressions, and their relationships.</p>
+<h3 id="semantic-analysis">03 · Semantic Analysis</h3>
+<p>Resolve names and validate tensor operations. Determine the types and
+shapes that code generation needs, and diagnose programs that violate
+the language's rules.</p>
+<h3 id="code-generation">04 · Code Generation</h3>
+<p>Translate the checked program into TileLang kernels and descriptions
+of how to connect them. Test the results across the required operations
+and shapes. Keep this correct, unoptimized version as the baseline for
+the next stage.</p>
+<h3 id="code-optimization">05 · Code Optimization</h3>
+<p>Choose and implement optimizations in your compiler. Compare against
+your baseline on common workloads, investigate performance changes, and
+support your results with reproducible correctness checks and timings.
+The leaderboard shows performance; the final report explains the
+compiler decisions behind it.</p>
+<p>Lab sessions provide time to implement, test, and discuss your
+design. The tutorials below prepare you for this work with small
+programs to run, modify, and diagnose.</p>
+<h2 id="tutorials">Tutorials</h2>
+<p>Build confidence for the project with executable examples. Each
+notebook includes setup and any companion sources it needs.</p>
+<h3 id="tutorial-1-scanning-with-flex">Tutorial 1 · Scanning with
+Flex</h3>
+<p>Build a scanner and explore matching rules, source locations, and
+token lifetimes.</p>
+<p class="notebook-links"><a href="tutorial1.html">Read</a> <a class="button" href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial1.ipynb">Run in Colab</a> <a href="tutorial1.ipynb" download>Download notebook</a></p>
+
+<h3 id="tutorial-2-parsing-with-bison">Tutorial 2 · Parsing with
+Bison</h3>
+<p>Recognize declarations, diagnose syntax errors, and construct an
+abstract syntax tree.</p>
+<p class="notebook-links"><a href="tutorial2.html">Read</a> <a class="button" href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial2.ipynb">Run in Colab</a> <a href="tutorial2.ipynb" download>Download notebook</a></p>
+
+<h3 id="tutorial-3-tensor-fundamentals">Tutorial 3 · Tensor
+fundamentals</h3>
+<p>Explore tensor layout, host/device interactions, and numerical
+correctness through libttl.</p>
+<p class="notebook-links"><a href="tutorial3.html">Read</a> <a class="button" href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial3.ipynb">Run in Colab</a> <a href="tutorial3.ipynb" download>Download notebook</a></p>
+
+<h3 id="tutorial-5-watching-a-real-tensor-compiler">Tutorial 5 ·
+Watching a real tensor compiler</h3>
+<p>Follow vector and matrix computations through TileLang and inspect
+the compiler's transformations.</p>
+<p class="notebook-links"><a href="tutorial5.html">Read</a> <a class="button" href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial5.ipynb">Run in Colab</a> <a href="tutorial5.ipynb" download>Download notebook</a></p>
+
+<h2 id="resources">Resources</h2>
+<p>Use the language reference, model examples, and development tools
+below as you work through the project. <strong>Lecture notes, midterm
+reviews, lab handouts, project starter packages, deadlines, and
+submission instructions are on Quercus.</strong></p>
+<ul>
+<li><p><a href="ttl467.html">TTL467 language description and complete
+reference</a> — the course language: syntax, types, named axes, tensor
+operations, and their semantics.</p></li>
+<li><p><a href="model-zoo.html">Model Zoo</a> — read matrix
+multiplication, attention, and a GPT-2 forward pass as tensor programs,
+with complete source for each.</p></li>
+<li><p><a href="https://github.com/jianwen-zhu/libttl">libttl</a> —
+create tensors, move data, and run compiled programs through a small C
+interface. Includes the runtime source and API documentation.</p></li>
+<li><p><a href="https://github.com/jianwen-zhu/cloudmake">CloudMake</a>
+— use the same Make-based workflow on your computer and remote compute
+services, including Colab. Includes the tool source and setup
+instructions.</p></li>
+<li><p><a href="https://q.utoronto.ca/">Open Quercus</a> — sign in with
+your University of Toronto account and select ECE467.</p></li>
+<li><p><strong>Instructor:</strong> Jianwen Zhu · <a
+href="mailto:jzhu@eecg.toronto.edu">jzhu@eecg.toronto.edu</a></p></li>
+</ul></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="#top">Back to top ↑</a></footer>
+</body>
+</html>

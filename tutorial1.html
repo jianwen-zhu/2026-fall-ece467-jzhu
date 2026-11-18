@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial 1: Scanning with
+Flex — ECE467</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="index.html">ECE<span>467</span></a><div><a href="index.html#objectives">Overview</a><a href="index.html#topics">Topics</a><a href="index.html#project">Project</a><a href="index.html#tutorials">Tutorials</a><a href="index.html#resources">Resources</a></div></nav>
+<main id="main" class="reference"><p><a
+href="index.html#tutorials">Tutorials</a> · <a
+href="tutorial1.ipynb">Notebook source</a> · <a
+href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial1.ipynb">Run
+in Colab</a></p>
+<div id="tutorial1-cell0" class="cell markdown">
+<h1 id="tutorial-1-scanning-with-flex">Tutorial 1: Scanning with Flex</h1>
+<p>Build a small scanner, then explore longest matches, rule priority, source locations, and token lifetimes.</p>
+<p><a href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial1.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab" /></a></p>
+</div>
+<div id="tutorial1-cell1" class="cell markdown">
+<h2 id="setup">Setup</h2>
+<p>Run these setup cells once, then work through the examples in order. In Colab, use a CPU runtime. On your own computer, install Make, a C compiler, and Flex first.</p>
+</div>
+<div id="tutorial1-cell2" class="cell code">
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>missing<span class="op">=</span><span class="dv">0</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> tool <span class="kw">in</span> make cc flex<span class="op">;</span> do command <span class="op">-</span>v <span class="st">&quot;$tool&quot;</span> <span class="op">&gt;/</span>dev<span class="op">/</span>null <span class="op">||</span> missing<span class="op">=</span><span class="dv">1</span><span class="op">;</span> done</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> python3 <span class="op">-</span>c <span class="st">&#39;import google.colab&#39;</span> <span class="dv">2</span><span class="op">&gt;/</span>dev<span class="op">/</span>null<span class="op">;</span> then</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> [ <span class="st">&quot;$missing&quot;</span> <span class="op">-</span>eq <span class="dv">1</span> ]<span class="op">;</span> then</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        apt<span class="op">-</span>get <span class="op">-</span>qq update</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        apt<span class="op">-</span>get <span class="op">-</span>qq install <span class="op">-</span>y build<span class="op">-</span>essential flex</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    fi</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>fi</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> tool <span class="kw">in</span> make cc flex<span class="op">;</span> do command <span class="op">-</span>v <span class="st">&quot;$tool&quot;</span><span class="op">;</span> done</span></code></pre></div>
+</div>
+<div id="tutorial1-cell3" class="cell markdown">
+<h2 id="setup-and-building">Setup and building</h2>
+<p>The examples use a local <code>.tutorial-1-work/</code> directory. Source files remain available for inspection; the final <code>make clean</code> removes generated files only. Rerunning a source cell overwrites that demonstration file, so save any experiments you want to keep first.</p>
+<p><code>%%bash</code> runs a cell as a shell script. <code>%%writefile</code> writes the remaining cell contents literally to the named file. No Python command wrapper is needed. Shell cells use <code>set -euo pipefail</code> so unexpected failures stop the cell rather than being hidden.</p>
+<p>The small Makefile below uses the same tools and conventions as the starter: <code>make</code> builds, file dependencies determine what needs rebuilding, and <code>make clean</code> removes build products. Recipe lines begin with a tab. <code>$&lt;</code> names the first prerequisite and <code>$@</code> the target. This demonstration has its own Makefile because its standalone <code>main</code> is not the starter's compiler driver.</p>
+</div>
+<div id="tutorial1-cell4" class="cell code">
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>mkdir <span class="op">-</span>p .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work</span></code></pre></div>
+</div>
+<div id="tutorial1-cell5" class="cell code">
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work<span class="op">/</span>Makefile</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>CC <span class="op">=</span> cc</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>CFLAGS <span class="op">=</span> <span class="op">-</span>std<span class="op">=</span>c11 <span class="op">-</span>O0 <span class="op">-</span>g <span class="op">-</span>Wall <span class="op">-</span>Wextra</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>FLEX <span class="op">=</span> flex</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>.DEFAULT_GOAL <span class="op">:=</span> <span class="bu">all</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>.SECONDARY:</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>.PHONY: <span class="bu">all</span> clean</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="bu">all</span>: words</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>.c: <span class="op">%</span>.l</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>   $(FLEX) <span class="op">-</span>o $<span class="op">@</span> $<span class="op">&lt;</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>: <span class="op">%</span>.c</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>   $(CC) $(CFLAGS) $<span class="op">&lt;</span> <span class="op">-</span>o $<span class="op">@</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>clean:</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>   $(RM) words priority words.c priority.c actual.txt error.txt</span></code></pre></div>
+</div>
+<div id="tutorial1-cell6" class="cell markdown">
+<h2 id="a-small-scanner">A small scanner</h2>
+<p>Consider <code>axis axis2 f32</code>. In TTL467, <code>axis</code> is a keyword, while <code>axis2</code> and <code>f32</code> are identifiers. The scanner below handles these words and whitespace; it is not a complete TTL467 scanner.</p>
+<p>A Flex file has three sections, separated by <code>%%</code>: declarations, matching rules, and C helper functions. Each rule associates a pattern with a C action. The location macro records where each match starts; we will examine it below.</p>
+<p><code>noyywrap</code> lets this example run without a separate Lex support library. Its <code>main</code> function calls the generated scanner.</p>
+</div>
+<div id="tutorial1-cell7" class="cell code">
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work<span class="op">/</span>words.l</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>option noyywrap nounput noinput nodefault</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>{</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">#include &lt;stdio.h&gt;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>static size_t line <span class="op">=</span> <span class="dv">1</span>, column <span class="op">=</span> <span class="dv">1</span>, row, col<span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co">#define YY_USER_ACTION \</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    row <span class="op">=</span> line<span class="op">;</span> col <span class="op">=</span> column<span class="op">;</span> <span class="op">\</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (<span class="bu">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> yyleng<span class="op">;</span> <span class="op">++</span>i) { <span class="op">\</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (yytext[i] <span class="op">==</span> <span class="st">&#39;</span><span class="ch">\n</span><span class="st">&#39;</span>) { <span class="op">++</span>line<span class="op">;</span> column <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> } <span class="op">\</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span> { <span class="op">++</span>column<span class="op">;</span> } <span class="op">\</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>}</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="co">&quot;axis&quot;</span>                  { printf(<span class="st">&quot;%zu:%zu KEYWORD </span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, row, col, yytext)<span class="op">;</span> }</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>[A<span class="op">-</span>Za<span class="op">-</span>z_][A<span class="op">-</span>Za<span class="op">-</span>z0<span class="op">-</span><span class="dv">9</span><span class="er">_</span>]<span class="op">*</span>    { printf(<span class="st">&quot;%zu:%zu IDENTIFIER </span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, row, col, yytext)<span class="op">;</span> }</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>[ \t\r\n]<span class="op">+</span>              <span class="op">;</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>.                       { fprintf(stderr, <span class="st">&quot;%zu:%zu bad: </span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, row, col, yytext)<span class="op">;</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>                          <span class="cf">return</span> <span class="dv">1</span><span class="op">;</span> }</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> main(void) { <span class="cf">return</span> yylex()<span class="op">;</span> }</span></code></pre></div>
+</div>
+<div id="tutorial1-cell8" class="cell code">
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>make</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;axis axis2 f32</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> .<span class="op">/</span>words <span class="op">|</span> tee actual.txt</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;1:1 KEYWORD axis</span><span class="ch">\n</span><span class="st">1:6 IDENTIFIER axis2</span><span class="ch">\n</span><span class="st">1:12 IDENTIFIER f32</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> diff <span class="op">-</span> actual.txt</span></code></pre></div>
+</div>
+<div id="tutorial1-cell9" class="cell markdown">
+<h2 id="longest-match-and-rule-priority">Longest match and rule priority</h2>
+<p>Flex chooses the longest match. If several rules match the same number of characters, it chooses the first rule.</p>
+<p>For <code>axis</code>, both the keyword and identifier patterns match four characters, so the keyword rule wins. For <code>axis2</code>, the identifier pattern matches five characters and wins regardless of rule order. A dtype name such as <code>f32</code> is an identifier in TTL467.</p>
+<p>The following variant puts identifiers first. Compare its output and generation warning with the original scanner. The original file is unchanged.</p>
+</div>
+<div id="tutorial1-cell10" class="cell code">
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>writefile .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work<span class="op">/</span>priority.l</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>option noyywrap nounput noinput nodefault</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>{</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co">#include &lt;stdio.h&gt;</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>static size_t line <span class="op">=</span> <span class="dv">1</span>, column <span class="op">=</span> <span class="dv">1</span>, row, col<span class="op">;</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="co">#define YY_USER_ACTION \</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    row <span class="op">=</span> line<span class="op">;</span> col <span class="op">=</span> column<span class="op">;</span> <span class="op">\</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (<span class="bu">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> yyleng<span class="op">;</span> <span class="op">++</span>i) { <span class="op">\</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (yytext[i] <span class="op">==</span> <span class="st">&#39;</span><span class="ch">\n</span><span class="st">&#39;</span>) { <span class="op">++</span>line<span class="op">;</span> column <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> } <span class="op">\</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span> { <span class="op">++</span>column<span class="op">;</span> } <span class="op">\</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>}</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>[A<span class="op">-</span>Za<span class="op">-</span>z_][A<span class="op">-</span>Za<span class="op">-</span>z0<span class="op">-</span><span class="dv">9</span><span class="er">_</span>]<span class="op">*</span>    { printf(<span class="st">&quot;%zu:%zu IDENTIFIER </span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, row, col, yytext)<span class="op">;</span> }</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="co">&quot;axis&quot;</span>                  { printf(<span class="st">&quot;%zu:%zu KEYWORD </span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, row, col, yytext)<span class="op">;</span> }</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>[ \t\r\n]<span class="op">+</span>              <span class="op">;</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>.                       { fprintf(stderr, <span class="st">&quot;%zu:%zu bad: </span><span class="sc">%s</span><span class="ch">\n</span><span class="st">&quot;</span>, row, col, yytext)<span class="op">;</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>                          <span class="cf">return</span> <span class="dv">1</span><span class="op">;</span> }</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="bu">int</span> main(void) { <span class="cf">return</span> yylex()<span class="op">;</span> }</span></code></pre></div>
+</div>
+<div id="tutorial1-cell11" class="cell code">
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>make priority</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;axis axis2</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> .<span class="op">/</span>priority <span class="op">|</span> tee actual.txt</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;1:1 IDENTIFIER axis</span><span class="ch">\n</span><span class="st">1:6 IDENTIFIER axis2</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> diff <span class="op">-</span> actual.txt</span></code></pre></div>
+</div>
+<div id="tutorial1-cell12" class="cell markdown">
+<p>The keyword rule is now unreachable: every occurrence of <code>axis</code> also matches the earlier identifier rule. The warning identifies a real change in token classification. Rule priority does not split <code>axis2</code>, because longest match is considered first.</p>
+<h2 id="source-locations-and-skipped-input">Source locations and skipped input</h2>
+<p>Skipping whitespace does not mean ignoring its effect on positions. <code>YY_USER_ACTION</code> saves the start of each match before advancing through its characters. It runs for whitespace matches too.</p>
+<p>In the next input, <code>axis</code> starts at line 1, column 3; <code>f32</code> starts at line 2, column 2; and <code>?</code> occurs at line 2, column 6. Columns here count source characters, not visual tab stops.</p>
+</div>
+<div id="tutorial1-cell13" class="cell code">
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> printf <span class="st">&#39;  axis</span><span class="ch">\n</span><span class="st"> f32 ?</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> .<span class="op">/</span>words <span class="op">&gt;</span> actual.txt <span class="dv">2</span><span class="op">&gt;</span> error.txt<span class="op">;</span> then</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    echo <span class="st">&quot;Expected an invalid-character error&quot;</span> <span class="op">&gt;&amp;</span><span class="dv">2</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    exit <span class="dv">1</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>fi</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>cat actual.txt error.txt</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;1:3 KEYWORD axis</span><span class="ch">\n</span><span class="st">2:2 IDENTIFIER f32</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> diff <span class="op">-</span> actual.txt</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;2:6 bad: ?</span><span class="ch">\n</span><span class="st">&#39;</span> <span class="op">|</span> diff <span class="op">-</span> error.txt</span></code></pre></div>
+</div>
+<div id="tutorial1-cell14" class="cell markdown">
+<p>The scanner reports <code>?</code> and returns a nonzero status. Silently skipping an invalid character could leave a plausible but incorrect token stream.</p>
+<p>For <code>axis item := 4;</code>, token starts are columns 1, 6, 11, 14, and 15. Numeric rules introduce further distinctions: TTL467 treats <code>-1.0</code> as two tokens, but <code>1e-3</code> as one floating-point token. Our small scanner does not yet implement those rules.</p>
+<h2 id="the-ttc-scanner-interface">The TTC scanner interface</h2>
+<p>The Stage 1 starter uses the same matching mechanism within a supplied C interface:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>This example</th>
+<th>TTC starter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>main calls yylex on stdin</td>
+<td>scan receives mapped source</td>
+</tr>
+<tr>
+<td>actions print</td>
+<td>emit appends an owned token</td>
+</tr>
+<tr>
+<td>local location macro</td>
+<td>supplied YY_USER_ACTION tracks locations</td>
+</tr>
+<tr>
+<td>scanner reaches EOF</td>
+<td>wrapper appends an explicit EOF checkpoint token</td>
+</tr>
+<tr>
+<td>temporary yytext</td>
+<td>retained spelling copied into the token arena</td>
+</tr>
+</tbody>
+</table>
+<p><code>YY_INPUT</code> refills Flex's small mutable buffer from mapped source bytes. The mapped file and the scanner buffer serve different purposes; another whole-file copy is unnecessary.</p>
+<p><code>yytext</code> refers to scanner-managed storage that can change on later matches. Tokens that retain their spelling need their own copy, owned by the token arena. The supplied wrapper handles this bookkeeping while students implement the lexical rules.</p>
+<p>Building the scaffold checks the toolchain, not scanner correctness. The project's <code>make check</code> is expected to fail until its rules are implemented.</p>
+</div>
+<div id="tutorial1-cell15" class="cell markdown">
+<h2 id="summary">Summary</h2>
+<ul>
+<li>Longest match determines token boundaries; rule order breaks ties.</li>
+<li>Every consumed character affects source locations, including skipped whitespace.</li>
+<li>Invalid input must produce an error rather than silently disappear.</li>
+<li>Retained token spellings need a lifetime independent of Flex's matching buffer.</li>
+</ul>
+<p>For further exploration, consider how a scanner remembers that it is inside a block comment, and how EOF detects an unterminated comment. A character class such as <code>[/*]</code> matches one character; it does not match the two-character delimiter <code>/*</code>.</p>
+</div>
+<div id="tutorial1-cell16" class="cell markdown">
+<h2 id="using-the-project-starter">Using the project starter</h2>
+<p>The same edit-build-run cycle applies to Project Stage 1. In a terminal at the root of your extracted stage package, run:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> <span class="at">-C</span> 01_scanner</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> <span class="at">-C</span> 01_scanner check-starter</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> <span class="at">-C</span> 01_scanner check</span></code></pre></div>
+<p>In the course checkout, use <code>course/project/01_scanner</code> instead. In Jupyter, prefix a single command with <code>!</code>, or place these commands in a <code>%%bash</code> cell. Paths are relative to the notebook's working directory.</p>
+<p>The stage Makefile includes the supplied <code>support/project.mk</code>: do not replace it with the toy Makefile above. <code>make</code> builds <code>ttlc</code>; <code>check-starter</code> checks the <strong>unmodified scaffold</strong>, not a completed solution; <code>check</code> checks your implementation and is expected to fail before you implement the stage. After editing your scanner.l, rerun <code>make</code> and <code>make check</code>. Later, <code>make -C 01_scanner clean</code> removes generated files without deleting your source.</p>
+<p>The following cell cleans only this notebook's demonstration build products.</p>
+</div>
+<div id="tutorial1-cell17" class="cell code">
+<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="op">%%</span>bash</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="op">-</span>euo pipefail</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>cd .tutorial<span class="op">-</span><span class="dv">1</span><span class="op">-</span>work</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>make clean</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>printf <span class="st">&#39;Tutorial 1 demonstrations passed; generated files removed.</span><span class="ch">\n</span><span class="st">&#39;</span></span></code></pre></div>
+</div></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="index.html#resources">Course materials</a></footer>
+</body></html>

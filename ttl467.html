@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTL467 Language
+Reference — ECE467</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<nav aria-label="Main navigation"><a class="brand" href="index.html">ECE<span>467</span></a><div><a href="index.html#objectives">Overview</a><a href="index.html#topics">Topics</a><a href="index.html#project">Project</a><a href="index.html#tutorials">Tutorials</a><a href="index.html#resources">Resources</a></div></nav>
+<main id="main" class="reference"><h1
+id="ttl467-language-reference">TTL467 Language Reference</h1>
+<p>TTL467 describes immutable tensor computations: a bound value cannot
+be changed.</p>
+<p><strong>Contents</strong></p>
+<ul>
+<li><a href="#1-language-scope">Language scope</a></li>
+<li><a href="#2-a-complete-program">A complete program</a></li>
+<li><a href="#3-tokens-and-grammar">Tokens and grammar</a></li>
+<li><a href="#4-types-names-and-shapes">Types, names, and
+shapes</a></li>
+<li><a href="#5-element-wise-operations-and-broadcasting">Element-wise
+operations and broadcasting</a></li>
+<li><a href="#6-einsum">Einsum</a></li>
+<li><a href="#7-selection-and-coordinate-operations">Selection and
+coordinate operations</a></li>
+<li><a href="#8-errors">Errors</a></li>
+</ul>
+<h2 id="1-language-scope">1. Language scope</h2>
+<p>The language has static named axes, globals, exported functions, and
+immutable bindings. Static means known at compile time; intrinsics are
+built-in operations. Its operations are element-wise intrinsics, einsum,
+constant selection, gather, and axis renaming/merging. Only the types
+and operations defined here are supported. There are no dynamic axes,
+loops, recursion, calls between exports, mutation, or implicit type
+conversions.</p>
+<h2 id="2-a-complete-program">2. A complete program</h2>
+<pre class="ttl"><code>axis row := 3, shared := 5, column := 4;
+export function gemm(a: f32[row shared], b: f32[shared column])
+    -&gt; f32[row column] :=
+    let
+        %0 = @einsum[row shared, shared column -&gt; row column](a, b)
+             map=@multiply_f32 reduce=@add_f32
+    in %0;</code></pre>
+<p>This program multiplies a 3-by-5 matrix by a 5-by-4 matrix. Axis
+names identify coordinates shared between operands. <code>%0</code>
+names an immutable result; an ordinary name such as <code>product</code>
+is also valid. Independent computations may be evaluated in any
+dependency-preserving order.</p>
+<h2 id="3-tokens-and-grammar">3. Tokens and grammar</h2>
+<h3 id="tokens">Tokens</h3>
+<p>Source text consists of ASCII characters. Whitespace consists of
+space, tab, line feed, carriage return, form feed, and vertical tab.
+Whitespace and comments separate tokens and are otherwise ignored.
+Comments are <code>//</code> through end of line and non-nesting
+<code>/* ... */</code>. An unterminated block comment is an error.</p>
+<p>The complete set of fixed tokens is:</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Token spellings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Keywords</td>
+<td><code>axis</code> <code>global</code> <code>export</code>
+<code>function</code> <code>let</code> <code>in</code> <code>map</code>
+<code>reduce</code> <code>inf</code> <code>true</code>
+<code>false</code></td>
+</tr>
+<tr>
+<td>Two-character symbols</td>
+<td><code>:=</code> <code>-&gt;</code></td>
+</tr>
+<tr>
+<td>One-character symbols</td>
+<td><code>(</code> <code>)</code> <code>[</code> <code>]</code>
+<code>:</code> <code>;</code> <code>,</code> <code>=</code>
+<code>-</code> <code>*</code></td>
+</tr>
+</tbody>
+</table>
+<p>Each spelling in the table is one token. The remaining token classes
+are defined by these regular expressions:</p>
+<pre class="text"><code>id       = [A-Za-z_][A-Za-z0-9_]*
+integer  = 0|[1-9][0-9]*
+float    = ([0-9]+\.[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?
+         | [0-9]+[eE][+-]?[0-9]+
+at-id    = @[A-Za-z_][A-Za-z0-9_]*
+perc-id  = %(0|[1-9][0-9]*)</code></pre>
+<p>Use longest matches, preferring keywords over <code>id</code>;
+keywords cannot be identifiers. Type names (<code>f32</code>,
+<code>i32</code>, <code>bool</code>) are <code>id</code>; intrinsic
+names are <code>at-id</code>. Neither <code>% 0</code> nor
+<code>@ add_f32</code> is valid. Integers and percent identifiers cannot
+have leading zeroes. Minus is separate in <code>-1.0</code>, but part of
+the float in <code>1e-3</code>. Comment delimiters are not tokens. No
+other symbol tokens exist: <code>+</code>, for example, occurs only
+inside a float exponent.</p>
+<h3 id="grammar">Grammar</h3>
+<p>Quoted strings denote the fixed tokens above, without the quotes. The
+five token-class names refer to their regular expressions.
+<code>EOF</code> denotes end of input; other names denote grammar rules.
+Outside quotes, <code>|</code> means alternative, parentheses group, and
+suffixes <code>?</code>, <code>*</code>, <code>+</code> mean optional,
+zero or more, and one or more. Thus <code>"*"</code> is a token;
+<code>dimension*</code> is a sequence of dimensions.</p>
+<pre class="ebnf"><code>program     ::= axis-decl* global* function+ EOF ;
+axis-decl   ::= &quot;axis&quot; id &quot;:=&quot; integer (&quot;,&quot; id &quot;:=&quot; integer)* &quot;;&quot; ;
+global      ::= &quot;global&quot; id &quot;:&quot; type &quot;;&quot; ;
+function    ::= &quot;export&quot; &quot;function&quot; id &quot;(&quot; (param (&quot;,&quot; param)*)? &quot;)&quot;
+                &quot;-&gt;&quot; results &quot;:=&quot; expr &quot;;&quot; ;
+param       ::= id &quot;:&quot; type ;
+results     ::= type | &quot;(&quot; type (&quot;,&quot; type)+ &quot;)&quot; ;
+type        ::= id (&quot;[&quot; dimension* &quot;]&quot;)? ;
+dimension   ::= id (&quot;:=&quot; integer)? ;
+value       ::= id | perc-id ;
+result      ::= value | &quot;(&quot; value (&quot;,&quot; value)+ &quot;)&quot; ;
+expr        ::= result | &quot;let&quot; binding (&quot;;&quot; binding)* &quot;in&quot; result ;
+binding     ::= value &quot;=&quot; (literal | &quot;-&quot; (integer | float | &quot;inf&quot;)
+                          | value selector | primitive) ;
+literal     ::= integer | float | &quot;inf&quot; | &quot;true&quot; | &quot;false&quot; ;
+selector    ::= &quot;[&quot; selection (&quot;,&quot; selection)* &quot;]&quot; ;
+selection   ::= id &quot;=&quot; integer (&quot;:&quot; integer)? ;
+primitive   ::= at-id (&quot;[&quot; axis-spec &quot;]&quot;)?
+                &quot;(&quot; value (&quot;,&quot; value)* &quot;)&quot; clauses ;
+clauses     ::= (map-clause reduce-clause? | reduce-clause map-clause?)? ;
+map-clause  ::= &quot;map&quot; &quot;=&quot; at-id ;
+reduce-clause ::= &quot;reduce&quot; &quot;=&quot; at-id ;
+axis-spec   ::= pattern (&quot;,&quot; pattern)* &quot;-&gt;&quot; pattern ;
+pattern     ::= (id | id &quot;:=&quot; integer | id &quot;:=&quot; &quot;[&quot; id (&quot;*&quot; id)+ &quot;]&quot;)* ;</code></pre>
+<h2 id="4-types-names-and-shapes">4. Types, names, and shapes</h2>
+<p>The dtypes are <code>f32</code> (IEEE binary32), <code>i32</code>
+(signed 32-bit integer), and <code>bool</code>. A scalar has no axes:
+<code>f32</code> and <code>f32[]</code> are the same type. Integer,
+floating, and Boolean literals have types i32, f32, and bool
+respectively.</p>
+<p>Static axis extents are integers in 1..2147483647. Every axis is
+declared exactly once. <code>f32[row column]</code> uses the declared
+extents; <code>f32[row := 2 column]</code> gives that occurrence of row
+extent 2. Inline extents do not declare or rename axes.</p>
+<p>Types compare dtype, named axes, and extents, not axis order:
+<code>f32[row column]</code> and <code>f32[column row]</code> are equal.
+Equal extents do not make different axes equal. A type cannot repeat an
+axis.</p>
+<p>Axes, exports, and values have separate namespaces. Globals are
+immutable module inputs, fixed for a module instance. Global and export
+names must each be unique. Within an export, parameters and bindings are
+unique and cannot shadow globals. Values refer to globals, parameters,
+or earlier bindings; forward references are forbidden. Local names are
+independent between exports. Percent names may name only local
+bindings.</p>
+<p>Each primitive produces one value. Export results are ordered value
+references; their inferred types and count must match the declaration.
+Bindings infer types from operands and operations, not from the export's
+result annotation.</p>
+<p>Nonnegative i32 literals are at most 2147483647; negative magnitudes
+may be 1..2147483648. Convert decimal floats to binary32,
+round-to-nearest ties-to-even. Overflow/underflow follow that
+conversion. <code>inf</code> and <code>-inf</code> are f32 infinities;
+there is no NaN literal.</p>
+<h2 id="5-element-wise-operations-and-broadcasting">5. Element-wise
+operations and broadcasting</h2>
+<p>A scalar operation applies independently at each coordinate. Its
+result axes are the union of operand axes. Shared axis names must have
+equal extents. An operand missing an axis broadcasts along it. A scalar
+therefore broadcasts over every tensor axis. An extent-one axis is not
+automatically broadcast to a different extent under the same name.</p>
+<p>For <code>x, y: f32[item]</code> and scalar
+<code>scale = 1.25</code>, the bindings
+<code>product = @multiply_f32(scale, x); result = @add_f32(product, y)</code>
+mean:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> item <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> item <span class="op">&lt;</span> ITEMS<span class="op">;</span> <span class="op">++</span>item<span class="op">)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    result<span class="op">[</span>item<span class="op">]</span> <span class="op">=</span> <span class="fl">1.25</span><span class="bu">f</span> <span class="op">*</span> x<span class="op">[</span>item<span class="op">]</span> <span class="op">+</span> y<span class="op">[</span>item<span class="op">];</span></span></code></pre></div>
+<p>For <code>matrix: f32[row column]</code> and
+<code>bias: f32[column]</code>, <code>@add_f32(matrix, bias)</code>
+broadcasts bias over row:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> row <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> row <span class="op">&lt;</span> ROWS<span class="op">;</span> <span class="op">++</span>row<span class="op">)</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> column <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> column <span class="op">&lt;</span> COLUMNS<span class="op">;</span> <span class="op">++</span>column<span class="op">)</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>        sum<span class="op">[</span>row<span class="op">][</span>column<span class="op">]</span> <span class="op">=</span> matrix<span class="op">[</span>row<span class="op">][</span>column<span class="op">]</span> <span class="op">+</span> bias<span class="op">[</span>column<span class="op">];</span></span></code></pre></div>
+<p>In all C examples, uppercase names denote extents and subscripts
+indicate array dimensions. These examples specify values, not storage or
+execution order; each result is immutable despite the C assignment
+notation.</p>
+<p>These are the complete supported scalar intrinsics:</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Input types -&gt; result</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>@add_f32, @subtract_f32, @multiply_f32, @divide_f32</td>
+<td>f32, f32 -&gt; f32</td>
+<td>arithmetic</td>
+</tr>
+<tr>
+<td>@negate_f32</td>
+<td>f32 -&gt; f32</td>
+<td>unary minus</td>
+</tr>
+<tr>
+<td>@minimum_f32, @maximum_f32</td>
+<td>f32, f32 -&gt; f32</td>
+<td>minimum, maximum</td>
+</tr>
+<tr>
+<td>@greater_f32</td>
+<td>f32, f32 -&gt; bool</td>
+<td>greater than</td>
+</tr>
+<tr>
+<td>@exp_f32, @exp2_f32</td>
+<td>f32 -&gt; f32</td>
+<td>powers of e and 2</td>
+</tr>
+<tr>
+<td>@log_f32, @log2_f32</td>
+<td>f32 -&gt; f32</td>
+<td>logarithms</td>
+</tr>
+<tr>
+<td>@ceil_f32</td>
+<td>f32 -&gt; f32</td>
+<td>ceiling, still represented as f32</td>
+</tr>
+<tr>
+<td>@rsqrt_f32</td>
+<td>f32 -&gt; f32</td>
+<td>reciprocal square root</td>
+</tr>
+<tr>
+<td>@cast_i32_f32</td>
+<td>i32 -&gt; f32</td>
+<td>explicit conversion</td>
+</tr>
+<tr>
+<td>@select_f32</td>
+<td>bool, f32, f32 -&gt; f32</td>
+<td>choose second if true, third otherwise</td>
+</tr>
+<tr>
+<td>@select_i32</td>
+<td>bool, i32, i32 -&gt; i32</td>
+<td>same</td>
+</tr>
+<tr>
+<td>@select_bool</td>
+<td>bool, bool, bool -&gt; bool</td>
+<td>same</td>
+</tr>
+</tbody>
+</table>
+<p>Direct applications have no axis specification, map clause, or reduce
+clause. Select is element-wise selection, not short-circuit control
+flow: its operands are already defined values. Intrinsic arguments must
+match their fixed types.</p>
+<h2 id="6-einsum">6. Einsum</h2>
+<p><code>@einsum</code> has one input pattern per operand, followed by
+its output pattern. Patterns here contain only bare axis names. Each
+input pattern names exactly its operand's axes, without duplicates. All
+shared extents must match.</p>
+<ol type="1">
+<li>Form the union of input axes.</li>
+<li>Output axes are distinct members of that union.</li>
+<li>Axes absent from the output are reduction axes.</li>
+<li>Broadcast operands missing an iteration axis, then apply map at each
+coordinate.</li>
+<li>Reduce the mapped values for each output coordinate, if reduction
+axes exist.</li>
+</ol>
+<p>With one operand, omitted map means identity. With multiple operands,
+map is required and its argument types follow operand order. No implicit
+multiplication. If no axis is reduced, reduce is forbidden. Otherwise
+reduce is required. No implicit addition.</p>
+<p>Supported reducers are @add_f32 (identity 0), @minimum_f32 (identity
++infinity), and @maximum_f32 (identity -infinity). Their input and
+output type is f32. The map's result type must match the reducer. The
+result tensor retains the output axes and their extents.</p>
+<p>For matrix multiplication:</p>
+<pre class="ttl"><code>@einsum[row shared, shared column -&gt; row column](a, b)
+    map=@multiply_f32 reduce=@add_f32</code></pre>
+<p>the scalar C interpretation is:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> row <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> row <span class="op">&lt;</span> ROWS<span class="op">;</span> <span class="op">++</span>row<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> column <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> column <span class="op">&lt;</span> COLUMNS<span class="op">;</span> <span class="op">++</span>column<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> accumulator <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> shared <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> shared <span class="op">&lt;</span> SHARED<span class="op">;</span> <span class="op">++</span>shared<span class="op">)</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>            accumulator <span class="op">+=</span> a<span class="op">[</span>row<span class="op">][</span>shared<span class="op">]</span> <span class="op">*</span> b<span class="op">[</span>shared<span class="op">][</span>column<span class="op">];</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>        product<span class="op">[</span>row<span class="op">][</span>column<span class="op">]</span> <span class="op">=</span> accumulator<span class="op">;</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Output axes form outer loops and reduction axes inner loops. Each
+operand uses only its own axes. Reduction starts from its identity. No
+output axes means a scalar result; no reduction axes means a mapped
+result without an accumulator.</p>
+<p>With identity map,
+<code>@einsum[row column -&gt; row](matrix) reduce=@add_f32</code>
+means:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> row <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> row <span class="op">&lt;</span> ROWS<span class="op">;</span> <span class="op">++</span>row<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> accumulator <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> column <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> column <span class="op">&lt;</span> COLUMNS<span class="op">;</span> <span class="op">++</span>column<span class="op">)</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>        accumulator <span class="op">+=</span> matrix<span class="op">[</span>row<span class="op">][</span>column<span class="op">];</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    row_sum<span class="op">[</span>row<span class="op">]</span> <span class="op">=</span> accumulator<span class="op">;</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>In
+<code>@einsum[item, -&gt; item](x, scale) map=@multiply_f32</code>, the
+empty pattern denotes scalar scale. No axis is reduced:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> item <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> item <span class="op">&lt;</span> ITEMS<span class="op">;</span> <span class="op">++</span>item<span class="op">)</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    scaled<span class="op">[</span>item<span class="op">]</span> <span class="op">=</span> x<span class="op">[</span>item<span class="op">]</span> <span class="op">*</span> scale<span class="op">;</span></span></code></pre></div>
+<p>This expression is equivalent to
+<code>@multiply_f32(x, scale)</code>.</p>
+<p>Reduction grouping is unspecified; different groupings can change
+FP32 rounding. The C loops do not require sequential execution or
+bitwise-identical results. Approximate operations follow the execution
+environment's documented rounding, exceptional-value, and
+numerical-domain rules, without changing the mathematical operation.</p>
+<h2 id="7-selection-and-coordinate-operations">7. Selection and
+coordinate operations</h2>
+<h3 id="constant-selection">Constant selection</h3>
+<p>For x of type <code>f32[token hidden]</code>:</p>
+<ul>
+<li><code>x[token=3]</code> removes token and reads its fourth
+element.</li>
+<li><code>x[token=2:6]</code> retains token with extent 4 and reindexes
+from zero.</li>
+</ul>
+<p>Axes must occur in x and cannot repeat in one selector. Bounds are
+integer literals: index 0 &lt;= i &lt; extent; range 0 &lt;= begin &lt;
+end &lt;= extent. Check them statically. Other axes and dtype are
+unchanged.</p>
+<p>With input <code>sequence[TOKENS][HIDDEN]</code>:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co">/* sequence[token=3], with TOKENS &gt;= 4 */</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> hidden <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> hidden <span class="op">&lt;</span> HIDDEN<span class="op">;</span> <span class="op">++</span>hidden<span class="op">)</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    selected<span class="op">[</span>hidden<span class="op">]</span> <span class="op">=</span> sequence<span class="op">[</span><span class="dv">3</span><span class="op">][</span>hidden<span class="op">];</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">/* sequence[token=2:6], with TOKENS &gt;= 6 */</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> token <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> token <span class="op">&lt;</span> <span class="dv">4</span><span class="op">;</span> <span class="op">++</span>token<span class="op">)</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> hidden <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> hidden <span class="op">&lt;</span> HIDDEN<span class="op">;</span> <span class="op">++</span>hidden<span class="op">)</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>        sliced<span class="op">[</span>token<span class="op">][</span>hidden<span class="op">]</span> <span class="op">=</span> sequence<span class="op">[</span>token <span class="op">+</span> <span class="dv">2</span><span class="op">][</span>hidden<span class="op">];</span></span></code></pre></div>
+<h3 id="gather">Gather</h3>
+<p><code>@gather[vocabulary -&gt; batch token](embedding, indices)</code>
+reads embedding rows using runtime indices. Indices have dtype i32;
+gather has two operands and no map/reduce clause.</p>
+<p>Let s be the single source axis, D the data axes, J the index axes,
+and R = D minus s. Require s in D and not in J. The axes written after
+the arrow are exactly J minus R. Shared axes have equal extents. The
+output has data's dtype and axes R union J.</p>
+<p>At each output coordinate, read j from indices, then data at s=j with
+retained coordinates unchanged. Negative or out-of-range j is a runtime
+error.</p>
+<p>For <code>embedding: f32[vocabulary hidden]</code> and
+<code>indices: i32[batch token]</code>, the gather above produces
+<code>f32[batch token hidden]</code>:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> batch <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> batch <span class="op">&lt;</span> BATCH<span class="op">;</span> <span class="op">++</span>batch<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> token <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> token <span class="op">&lt;</span> TOKENS<span class="op">;</span> <span class="op">++</span>token<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> j <span class="op">=</span> indices<span class="op">[</span>batch<span class="op">][</span>token<span class="op">];</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>j <span class="op">&lt;</span> <span class="dv">0</span> <span class="op">||</span> j <span class="op">&gt;=</span> VOCABULARY<span class="op">)</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>            runtime_error<span class="op">();</span> <span class="co">/* terminates evaluation; does not return */</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> hidden <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> hidden <span class="op">&lt;</span> HIDDEN<span class="op">;</span> <span class="op">++</span>hidden<span class="op">)</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>            gathered<span class="op">[</span>batch<span class="op">][</span>token<span class="op">][</span>hidden<span class="op">]</span> <span class="op">=</span> embedding<span class="op">[</span>j<span class="op">][</span>hidden<span class="op">];</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="axis-renaming-and-merging">Axis renaming and merging</h3>
+<p><code>@rearrange</code> has one operand, one input/output pattern,
+and no map/reduce clauses. It preserves dtype and element values, but
+may require a storage copy. Input patterns name exactly the operand's
+axes, once each, using bare names. All axes mentioned must be declared.
+Each expression preserves all axes, renames one, or merges one ordered
+group. Other axes retain their identities, extents, and coordinates.</p>
+<p><strong>Renaming.</strong> Replace one input axis with one distinct
+output axis of equal extent. The new identity must not already occur in
+the input. All other axes appear on both sides unchanged. Corresponding
+input and output coordinates are equal; only the axis identity
+changes.</p>
+<pre class="ttl"><code>// key: f32[batch token head channel]; token and source have equal extents
+@rearrange[batch token head channel -&gt; batch source head channel](key)</code></pre>
+<div class="sourceCode" id="cb13"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> batch <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> batch <span class="op">&lt;</span> BATCH<span class="op">;</span> <span class="op">++</span>batch<span class="op">)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> source <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> source <span class="op">&lt;</span> TOKENS<span class="op">;</span> <span class="op">++</span>source<span class="op">)</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> head <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> head <span class="op">&lt;</span> HEADS<span class="op">;</span> <span class="op">++</span>head<span class="op">)</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> channel <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> channel <span class="op">&lt;</span> CHANNELS<span class="op">;</span> <span class="op">++</span>channel<span class="op">)</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>                renamed<span class="op">[</span>batch<span class="op">][</span>source<span class="op">][</span>head<span class="op">][</span>channel<span class="op">]</span> <span class="op">=</span> key<span class="op">[</span>batch<span class="op">][</span>source<span class="op">][</span>head<span class="op">][</span>channel<span class="op">];</span></span></code></pre></div>
+<p>The output's source coordinate selects the input's token coordinate.
+Renaming does not identify token and source elsewhere in the
+program.</p>
+<p><strong>Merging.</strong> Replace two or more distinct input axes
+with one output axis written
+<code>parent := [factor1 * factor2 * ...]</code>. The parent must not
+occur in the input. Each factor must occur in the input and must not
+occur separately in the output. All remaining axes appear on both sides
+unchanged. The declared parent extent must equal the product of the
+factors' input extents.</p>
+<p>Factor order determines coordinates, last factor fastest. Start with
+the first coordinate; for each next factor, multiply by its extent and
+add its coordinate. For two factors:</p>
+<p><code>parent_coordinate = factor1_coordinate * factor2_extent + factor2_coordinate</code>.</p>
+<pre class="ttl"><code>// context: f32[batch token head channel]
+// projection extent equals head extent times channel extent
+@rearrange[batch token head channel -&gt; batch token projection := [head * channel]](context)</code></pre>
+<div class="sourceCode" id="cb15"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> batch <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> batch <span class="op">&lt;</span> BATCH<span class="op">;</span> <span class="op">++</span>batch<span class="op">)</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> token <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> token <span class="op">&lt;</span> TOKENS<span class="op">;</span> <span class="op">++</span>token<span class="op">)</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> head <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> head <span class="op">&lt;</span> HEADS<span class="op">;</span> <span class="op">++</span>head<span class="op">)</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> channel <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> channel <span class="op">&lt;</span> CHANNELS<span class="op">;</span> <span class="op">++</span>channel<span class="op">)</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>                merged<span class="op">[</span>batch<span class="op">][</span>token<span class="op">][</span>head <span class="op">*</span> CHANNELS <span class="op">+</span> channel<span class="op">]</span> <span class="op">=</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>                    context<span class="op">[</span>batch<span class="op">][</span>token<span class="op">][</span>head<span class="op">][</span>channel<span class="op">];</span></span></code></pre></div>
+<p>No other axes may appear or disappear. Products occur only on the
+output side; inline extents such as <code>axis := 1</code> are forbidden
+in rearrangement patterns. There is no splitting, unit-axis
+insertion/removal, replication, or concatenation. A rename and a merge
+require separate expressions. Reordering preserved axes in a pattern is
+the identity.</p>
+<h2 id="8-errors">8. Errors</h2>
+<p>Violations of the lexical, grammar, name, type, shape, and operation
+rules above are static errors. An intrinsic clause may occur at most
+once; unknown intrinsics and forbidden clauses are errors.</p>
+<p>At invocation, supplied values must match their declared shapes and
+dtypes. An out-of-range gather index or a numerical-domain failure is a
+runtime error. Invalid indices are not silently wrapped, clamped,
+padded, or truncated.</p>
+<p><a href="ttl467.md">Raw Markdown file</a> · <a href="LICENSE.ttl">MIT
+License</a></p></main>
+<footer><span>ECE467 · Compilers and Interpreters</span><a href="index.html#resources">Course materials</a></footer>
+</body></html>

@@ -1,0 +1,10 @@
+axis row := 3, shared := 5, column := 4;
+export function gemm(
+    a: f32[row shared],
+    b: f32[shared column]
+) -> f32[row column] :=
+    let
+        %0 = @einsum[row shared, shared column -> row column](a, b)
+            map=@multiply_f32 reduce=@add_f32
+    in
+        %0;
