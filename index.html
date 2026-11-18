@@ -18,32 +18,30 @@
 
 <h2 id="objectives">Overview</h2>
 <p>Compilers are more ubiquitous than most programmers realize. Their
-ideas power browser scripts, database queries, and the tensor
-computations behind language models. ECE467 reveals the machinery behind
-operations you have taken for granted: how a system understands a
-program and turns it into work a machine can execute.</p>
-<p>You will follow that journey from source text to executable code:
-recognizing tokens and grammatical structure, resolving names and
-checking types, representing and analyzing programs, and generating
-efficient instructions. You will learn how runtime storage supports
-function calls and how optimizations change a program while preserving
-its meaning. Together, these ideas explain the connection between the
-code you write and its behavior on the hardware.</p>
-<p>Building a compiler also develops the <strong>art of
+ideas power browser scripts, database queries, and tensor computations
+behind language models. ECE467 reveals the machinery you have taken for
+granted: how a system understands a program and turns it into work a
+machine can execute.</p>
+<p>Follow the journey from source text to executable code: recognize
+tokens and grammatical structure, resolve names and check types,
+represent and analyze programs, and generate efficient instructions.
+Learn how runtime storage supports function calls and how optimizations
+improve a program while preserving its meaning. These ideas connect the
+code you write to its behavior on hardware.</p>
+<p>Building a compiler develops both the <strong>art of
 programming</strong> — choosing representations and interfaces that make
 complex software manageable — and the <strong>science of
 programming</strong> — turning formal models into working algorithms.
-These benefits extend well beyond compiler development.</p>
-<p>The project brings this foundation to the <strong>frontier of AI
-infrastructure</strong>. You build a compiler for a language that
-operates on tensors—multidimensional arrays—to express computations used
-in modern large language models. Your generated programs target graphics
-processing units (GPUs). You test their results and measure the
-performance of your optimizations.</p>
+Both extend well beyond compiler development.</p>
+<p>The project brings these foundations to the <strong>frontier of AI
+infrastructure</strong>. Build a compiler for a language that expresses
+modern large language model computations using tensors—multidimensional
+arrays. Generate programs for graphics processing units (GPUs), test
+their results, and measure your optimizations' performance.</p>
 <h2 id="topics">Topics</h2>
-<p>The lectures develop the ideas needed to understand and build a
-compiler. The weekly topics and readings below follow the course
-schedule on Quercus, the university's course platform.</p>
+<p>The lectures develop the foundations for building a compiler. Topics
+and readings follow the schedule on Quercus, the university's course
+platform.</p>
 <p>Reading numbers refer to Alfred V. Aho, Monica S. Lam, Ravi Sethi,
 and Jeffrey D. Ullman, <em>Compilers: Principles, Techniques, and
 Tools</em>, <strong>2nd edition</strong> (the <strong>Dragon
@@ -75,62 +73,59 @@ companion website</a>. “Notes” refers to lecture notes on Quercus.</p>
 </div>
 
 <h2 id="project">Project</h2>
-<p>Put the lecture material into practice by implementing a compiler in
-C for <a href="ttl467.html">ECE467 Tiny Tensor Language (TTL467)</a>.
-The language names tensor dimensions, applies operations to individual
-elements, and combines values through reductions such as sums. Your
-compiler emits programs in <strong>TileLang</strong>, a language for
-writing GPU kernels. A kernel is a function executed by GPU threads; the
-supplied tools compile and run these kernels.</p>
+<p>Implement a compiler in C for <a href="ttl467.html">ECE467 Tiny
+Tensor Language (TTL467)</a>. The language names tensor dimensions,
+operates on individual elements, and combines values through reductions
+such as sums. Your compiler emits programs in <strong>TileLang</strong>,
+a language for writing GPU kernels—functions executed by GPU threads.
+The supplied tools compile and run these kernels.</p>
 <p>The target application is <strong>large language model
 inference</strong>: using a trained model to predict the next text
-token, such as a word or word fragment. Explore the computations behind
-that prediction in the <a href="model-zoo.html">Model Zoo</a>, from <a
+token, such as a word or word fragment. Explore these computations in
+the <a href="model-zoo.html">Model Zoo</a>, from <a
 href="gemm.html">matrix multiplication</a> to <a
 href="attention.html">attention</a> and a <a
-href="gpt2-forward.html">GPT-2 forward pass</a>. The optimization
-challenge is to make these computations run faster while preserving
-their results.</p>
-<p>Two supporting tools connect your compiler to working hardware. <a
+href="gpt2-forward.html">GPT-2 forward pass</a>. Your challenge: make
+them run faster while preserving their results.</p>
+<p>Two tools connect your compiler to hardware. <a
 href="https://github.com/jianwen-zhu/libttl">libttl (Tiny Tensor
-Library)</a> provides the C interface for managing tensors and executing
+Library)</a> provides a C interface for managing tensors and executing
 compiled programs. <a
 href="https://github.com/jianwen-zhu/cloudmake">CloudMake</a> runs your
-project's Make targets locally or on cloud hardware, so you can keep
-editing locally while building and testing on a GPU.</p>
-<p>The project is split into five stages, each implementing one compiler
-phase. You first recover the program's structure and check its meaning,
-then generate working code and optimize it. Supplied intermediate files
-let you test each phase independently before connecting the phases.</p>
+project's Make targets locally or in the cloud: edit on your computer,
+build and test on a GPU.</p>
+<p>The project is split into five stages, one for each compiler phase.
+Together, they recover the program's structure, check its meaning,
+generate working code, and optimize it. Supplied intermediate files let
+you test each phase independently before connecting them.</p>
 <h3 id="lexical-analysis">01 · Lexical Analysis</h3>
-<p>Implement a scanner that groups source characters into tokens such as
-keywords, identifiers, and numbers. Report invalid input and pass the
-token stream to the parser.</p>
+<p>Build a scanner that groups characters into tokens such as keywords,
+identifiers, and numbers. Report invalid input and pass the tokens to
+the parser.</p>
 <h3 id="syntax-analysis">02 · Syntax Analysis</h3>
-<p>Implement a parser that checks the token stream against TTL467's
-grammar. Construct an abstract syntax tree representing declarations,
-expressions, and their relationships.</p>
+<p>Check the token stream against TTL467's grammar. Build an abstract
+syntax tree representing declarations, expressions, and their
+relationships.</p>
 <h3 id="semantic-analysis">03 · Semantic Analysis</h3>
-<p>Resolve names and validate tensor operations. Determine the types and
-shapes that code generation needs, and diagnose programs that violate
-the language's rules.</p>
+<p>Resolve names, validate tensor operations, and diagnose violations of
+the language's rules. Determine the types and shapes needed for code
+generation.</p>
 <h3 id="code-generation">04 · Code Generation</h3>
 <p>Translate the checked program into TileLang kernels and descriptions
 of how to connect them. Test the results across the required operations
-and shapes. Keep this correct, unoptimized version as the baseline for
-the next stage.</p>
+and shapes. Keep this correct, unoptimized version as your baseline.</p>
 <h3 id="code-optimization">05 · Code Optimization</h3>
-<p>Choose and implement optimizations in your compiler. Compare against
-your baseline on common workloads, investigate performance changes, and
-support your results with reproducible correctness checks and timings.
-The leaderboard shows performance; the final report explains the
-compiler decisions behind it.</p>
-<p>Lab sessions provide time to implement, test, and discuss your
-design. The tutorials below prepare you for this work with small
-programs to run, modify, and diagnose.</p>
+<p>Choose and implement compiler optimizations. Compare with your
+baseline on common workloads, investigate performance changes, and
+provide reproducible correctness checks and timings. The leaderboard
+shows performance; your report explains the compiler decisions behind
+it.</p>
+<p>Use lab sessions to implement, test, and discuss your design. The
+tutorials prepare you with small programs to run, modify, and
+diagnose.</p>
 <h2 id="tutorials">Tutorials</h2>
-<p>Build confidence for the project with executable examples. Each
-notebook includes setup and any companion sources it needs.</p>
+<p>Build confidence with executable examples. Each notebook includes
+setup and the companion sources it needs.</p>
 <h3 id="tutorial-1-scanning-with-flex">Tutorial 1 · Scanning with
 Flex</h3>
 <p>Build a scanner and explore matching rules, source locations, and
@@ -156,10 +151,10 @@ the compiler's transformations.</p>
 <p class="notebook-links"><a href="tutorial5.html">Read</a> <a class="button" href="https://colab.research.google.com/github/jianwen-zhu/2026-fall-ece467-jzhu/blob/gh-pages/tutorial5.ipynb">Run in Colab</a> <a href="tutorial5.ipynb" download>Download notebook</a></p>
 
 <h2 id="resources">Resources</h2>
-<p>Use the language reference, model examples, and development tools
-below as you work through the project. <strong>Lecture notes, midterm
-reviews, lab handouts, project starter packages, deadlines, and
-submission instructions are on Quercus.</strong></p>
+<p>Use these references, examples, and tools throughout the project.
+<strong>Lecture notes, midterm reviews, lab handouts, project starter
+packages, deadlines, and submission instructions are on
+Quercus.</strong></p>
 <ul>
 <li><p><a href="ttl467.html">TTL467 language description and complete
 reference</a> — the course language: syntax, types, named axes, tensor
